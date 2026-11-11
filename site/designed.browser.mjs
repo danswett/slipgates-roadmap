@@ -11,7 +11,9 @@ test('designed roadmap renders on phone and desktop without outside requests', {
   const data = join(dir, 'data.json'), requests = [], failures = [], pending = new Map();
   const value = { updatedAt: new Date().toISOString(), totals: { prsMerged: 100 }, people: { builders: 3, reviewers: 2 },
     epics: [{ number: 2, title: 'Finished', closed: 3, open: 0, priority_order: 1, open_prs: 0, merged_last_24h: 4, blockers: [] },
-      { number: 1, title: 'Blocked', closed: 1, open: 2, priority_order: 2, open_prs: 2, merged_last_24h: 1, blockers: [7] },
+      { number: 1, title: 'Blocked', closed: 1, open: 2, priority_order: 2, open_prs: 2, merged_last_24h: 1, blockers: [7],
+        blocked: true, blockerDetails: [{ number: 8, title: 'Phone layout decision', reason: 'waiting on the phone layout decision from the design review next week', clearsIt: 'Creative' }],
+        blockedChildren: [{ number: 7, title: 'Row menu on a phone', clearsIt: 'Creative', blockers: [{ number: 8, title: 'Phone layout decision', reason: 'waiting on the phone layout decision from the design review next week', clearsIt: 'Creative' }] }] },
       { number: 3, title: 'No slices yet', closed: 0, open: 0, priority_order: 3, open_prs: 0, merged_last_24h: 0, blockers: [] }],
     stats: { 'danswett/agent-bridge': { commits: { total: 456 }, issues: { counts: { total: 123, resolved: 90 } },
       merges: { last_24_hours: 17, per_hour: Array.from({ length: 48 }, (_, i) => ({ at: new Date((Math.floor(Date.now() / 3600000) - 47 + i) * 3600000).toISOString(), count: i % 8 })) },
@@ -60,7 +62,14 @@ test('designed roadmap renders on phone and desktop without outside requests', {
       if (state === 'fresh' || state === 'partial') {
         assert.equal(view.title, 'Where Slipgates stands'); assert.equal(view.tiles, 4); assert.equal(view.epics.length, 3);
         assert.match(view.epics[0].id, /#2.*Finished/); assert.equal(view.epics[0].bar, '3 of 3 slices done'); assert.match(view.epics[0].chip, /Done/);
-        assert.match(view.epics[1].chip, /Blocked/); assert.equal(view.epics[2].bar, undefined); assert.equal(view.epics[2].chip, undefined);
+        const badge = await evaluate(`({ text: document.querySelector('.blk summary')?.textContent, height: document.querySelector('.blk summary')?.getBoundingClientRect().height, motion: getComputedStyle(document.querySelector('.blk .chev') ?? document.body).transitionDuration })`);
+        assert.match(badge.text, /Blocked by #8/); assert.ok(badge.height >= 32); assert.equal(badge.motion, '0s');
+        await send('Runtime.evaluate', { expression: "document.querySelector('.blk summary').focus()" });
+        await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+        await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+        assert.equal(await evaluate("document.querySelector('.blk').open && document.querySelector('.blk-list').textContent.includes('Clears it: Creative')"), true);
+        assert.equal(await evaluate("document.documentElement.scrollWidth <= innerWidth && !document.querySelector('.epic').textContent.includes('Data unavailable')"), true);
+        assert.equal(view.epics[2].bar, undefined); assert.equal(view.epics[2].chip, undefined);
         assert.equal(style.columns, width < 900 ? 2 : 4); assert.match(view.text, /No slices planned/);
         assert.match(view.text, /Merges per hour, last 24 h/); assert.match(view.text, /Throughput/);
         const charts = await evaluate(`({ spark: document.querySelectorAll('.spark .dot').length, bars: document.querySelectorAll('.bars i').length, tables: document.querySelectorAll('.charts details').length, notes: document.querySelector('.charts').textContent.match(/Data unavailable/g)?.length ?? 0 })`);

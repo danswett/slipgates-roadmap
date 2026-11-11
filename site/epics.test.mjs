@@ -41,11 +41,50 @@ test('every public epic has progress, child counts, PRs and blockers in D1 roadm
     assert.match(row, /2 open PRs/);
     assert.match(row, /4 merged in 24 h/);
   }
-  assert.match(rows[2], /chip blocked/);
+  assert.match(rows[2], /blk none/);
   for (const number of [803, 908])
-    assert.match(rows[2], new RegExp(`href="https://github.com/danswett/agent-bridge/issues/${number}"[^>]*>#${number}</a>`));
+    assert.match(html, new RegExp(`href="https://github.com/danswett/agent-bridge/issues/${number}"`));
   assert.match(html, /&lt;script&gt;Trust &amp; &quot;safety&quot;&lt;\/script&gt;/);
   assert.doesNotMatch(html, /PRIVATE_SENTINEL|#997|<script\b|(?:src|href)="(?:https?:)?\/\/(?!github\.com\/danswett\/agent-bridge\/issues\/)/i);
+});
+
+const blocker = (number, fields = {}) => ({ number, title: `Blocker ${number}`,
+  reason: 'missing reply, P0', clearsIt: 'Engineering', ...fields });
+const child = (number, blockers, fields = {}) => ({ number, title: `Child ${number}`,
+  blockers, clearsIt: 'Engineering', ...fields });
+const blockedEpic = (children, details = children.flatMap(c => c.blockers)) => epic(750,
+  { blockers: children.map(c => c.number), blocked: true, blockedChildren: children, blockerDetails: details });
+
+test('one blocker names the cause and opens a full escaped child, blocker and role list', () => {
+  const { html } = render([blockedEpic([child(1927, [blocker(1925,
+    { title: '<Reply & restart>', reason: 'missing <reply>, P0' })], { title: 'Child <reply>' })])]);
+  assert.match(html, /<details class="blk"><summary>.*<b>Blocked by #1925<\/b> \(missing &lt;reply&gt;, P0\)/s);
+  assert.match(html, /class="child".*issues\/1927.*Child &lt;reply&gt;/s);
+  assert.match(html, /class="by".*issues\/1925.*&lt;Reply &amp; restart&gt;/s);
+  assert.match(html, /Clears it: <b>Engineering<\/b>/);
+  assert.doesNotMatch(html, /Needs a blocker|class="more"|<script\b|<reply>/);
+  assert.doesNotMatch(html.match(/<li class="card epic[\s\S]*?<\/section>/)?.[0], /Data unavailable/);
+});
+
+test('several and mixed children name the first recorded cause and list every blocker', () => {
+  const unknown = blocker(null, { title: 'No blocker recorded', reason: 'No blocker recorded' });
+  const { html } = render([blockedEpic([child(1900, [unknown]),
+    child(1927, [blocker(1925), blocker(1926)]), child(1930, [blocker(1929)])])]);
+  assert.match(html, /<b>Blocked by #1925<\/b>.*<span class="more">\+2 more<\/span>/s);
+  for (const n of [1900, 1927, 1925, 1926, 1930, 1929]) assert.match(html, new RegExp(`issues/${n}"`));
+  assert.match(html, /Needs a blocker \(1\)/);
+  const panel = html.split('<section class="need"')[1];
+  assert.match(panel, /issues\/1900/); assert.doesNotMatch(panel, /issues\/1927|issues\/1930/);
+});
+
+test('label-only blocks ask for source correction, while private causes never get public links', () => {
+  const unknown = blocker(null, { title: 'No blocker recorded', reason: 'No blocker recorded' });
+  const missing = render([blockedEpic([child(1900, [unknown])])]).html;
+  assert.match(missing, /<details class="blk none"><summary>.*<b>Blocked<\/b>: no blocker recorded/s);
+  assert.match(missing, /No blocker recorded/); assert.match(missing, /Blocked by #N/); assert.match(missing, /Clears it: Engineering/);
+  const own = render([blockedEpic([], [blocker(55, { title: 'private item', reason: 'private item', clearsIt: 'someone@example.com' })])]).html;
+  assert.match(own, /<details class="blk">/); assert.match(own, /Blocked by private item/);
+  assert.match(own, /Clears it: <b>Unassigned<\/b>/); assert.doesNotMatch(own, /issues\/55|#55|someone@example.com/);
 });
 
 test('empty and completed epics keep honest progress without false completion', () => {
