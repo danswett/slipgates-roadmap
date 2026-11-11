@@ -1,7 +1,7 @@
 /* Approved roadmap board, D6a subset: charts and detail panels follow separately. */
 *,*::before,*::after{box-sizing:border-box}
 html{color-scheme:light dark;font-synthesis:none;-webkit-text-size-adjust:100%}
-body{margin:0;background:var(--ab-shell);color:var(--ab-text);font:400 16px/1.5 var(--ab-font-sans);background-image:radial-gradient(60rem 28rem at 85% -8rem,color-mix(in srgb,var(--ab-bridge) 14%,transparent),transparent 70%)}
+body{margin:0;min-height:100vh;background:var(--ab-shell);color:var(--ab-text);font:400 16px/1.5 var(--ab-font-sans);background-image:radial-gradient(60rem 28rem at 85% -8rem,color-mix(in srgb,var(--ab-bridge) 14%,transparent),transparent 70%);background-repeat:no-repeat}
 .num,.mono{font-family:var(--ab-font-mono);font-variant-numeric:tabular-nums}
 a{color:var(--ab-bridge);min-height:44px;display:inline-flex;align-items:center}
 :focus-visible{outline:2px solid var(--ab-bridge);outline-offset:2px;border-radius:var(--ab-radius-control)}
@@ -25,7 +25,7 @@ h1{margin:0;font-size:clamp(1.75rem,4.5vw,2.75rem);line-height:1.1;font-weight:6
 .stat{font-size:2rem;line-height:1.1;font-weight:600}.stat:has(+.sub){margin-bottom:4px}
 .stat small,.sub{font-family:var(--ab-font-sans);font-size:.875rem;color:var(--ab-text2);font-weight:400}.stat small{margin-left:4px}
 .people{display:flex;gap:8px;flex-wrap:wrap}.people>div{min-width:max-content;flex:1}
-.stat.num:has(~.sub){overflow-wrap:anywhere}.sub{margin-top:4px}.none{color:var(--ab-text2);font-size:.875rem}
+.stat.num:has(~.sub){overflow-wrap:anywhere}.sub{margin-top:4px}.none{color:var(--ab-text2);font-size:1rem}
 .epics{list-style:none;margin:0;padding:0;display:grid;gap:12px}.grid>h2{margin:0;font-size:1.125rem}
 .epic{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px}
 .epic h3{margin:0;font-size:1rem;font-weight:600;min-width:0}.epic h3 a{color:inherit;text-decoration:none;display:block;padding:10px 0}
@@ -35,6 +35,8 @@ h1{margin:0;font-size:clamp(1.75rem,4.5vw,2.75rem);line-height:1.1;font-weight:6
 .chip{display:inline-flex;align-items:center;gap:6px}.chip svg{width:16px;height:16px;flex:none}
 .chip.done{color:var(--ab-text)}.chip.done svg{color:var(--ab-bridge)}.chip.blocked{color:var(--ab-needs-text);font-weight:600}.chip.blocked svg{color:var(--ab-needs)}
 .epic.is-blocked .bar i{background:var(--ab-neutral)}
-@media(min-width:48rem){.wrap{padding:0 32px 64px}.tiles{grid-template-columns:repeat(4,minmax(0,1fr))}.people{gap:24px}}
+footer{margin-top:40px;color:var(--ab-text3);font-size:.8125rem;display:flex;flex-wrap:wrap;gap:8px 24px;border-top:1px solid var(--ab-stroke);padding-top:16px}
+@media(min-width:48rem){.wrap{padding:0 32px 64px}.people{gap:24px}}
+@media(min-width:900px){.tiles{grid-template-columns:repeat(4,minmax(0,1fr))}}
 @media(prefers-reduced-motion:reduce){.bar i{animation:none}}
 @media(forced-colors:active){.bar{border:1px solid CanvasText;box-shadow:none}.bar i{background:Highlight}.card{border-color:CanvasText}}
