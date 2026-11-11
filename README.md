@@ -46,7 +46,10 @@ in the generator's #696-then-priority order. Invalid epic details show Data unav
 Missing all-time merged-PR and live people counts remain explicitly unavailable;
 30-day authors and review families are not presented as people at work.
 Tokens and self-hosted fonts are the approved agent-bridge brand assets (OFL in
-`site/fonts`); the D6a stylesheet is the chart-free subset of the Creative board.
+`site/fonts`); the stylesheet follows the Creative board.
+Chart cards use the latest 24 hourly merges and 14 Pacific daily merge buckets,
+with native tables, a current-hour dot, highlighted today, median merge and main CI times.
+Missing or invalid chart fields show Data unavailable independently, never invented zeroes.
 Run `node --test --test-concurrency=1 site/designed.browser.mjs` for 390/820/1180/1376px
 rendered checks with installed Edge, or set `ROADMAP_BROWSER` to a Chromium binary.
 `ROADMAP_SCREENSHOTS` saves the checked states; no browser-test dependency is needed.

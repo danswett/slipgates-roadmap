@@ -70,6 +70,14 @@ test('designed roadmap renders on phone and desktop without outside requests', {
           assert.equal(await evaluate("document.documentElement.scrollWidth > innerWidth"), false);
           assert.equal(await evaluate("[...document.querySelectorAll('.charts summary')].every(e => e.getBoundingClientRect().height >= 44)"), true);
           assert.equal(await evaluate("[...document.querySelectorAll('.charts .line,.charts .bars i')].every(e => getComputedStyle(e).animationName === 'none')"), true);
+          for (const mode of ['light', 'contrast']) {
+            await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }, { name: 'forced-colors', value: mode === 'contrast' ? 'active' : 'none' }, { name: 'prefers-reduced-motion', value: 'reduce' }] });
+            assert.equal(await evaluate("document.documentElement.scrollWidth > innerWidth || [...document.querySelectorAll('.charts h2,.charts h3,.charts .stat,.charts summary,.charts th,.charts td')].some(e => e.scrollWidth > e.clientWidth + 1)"), false);
+            if (mode === 'contrast') assert.equal(await evaluate("getComputedStyle(document.querySelector('.spark .area')).fill"), 'none');
+            if (process.env.ROADMAP_SCREENSHOTS) { mkdirSync(process.env.ROADMAP_SCREENSHOTS, { recursive: true }); writeFileSync(join(process.env.ROADMAP_SCREENSHOTS, `${width}-${mode}.png`), Buffer.from((await send('Page.captureScreenshot', { captureBeyondViewport: true })).data, 'base64')); }
+          }
+          await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }, { name: 'forced-colors', value: 'none' }, { name: 'prefers-reduced-motion', value: 'reduce' }] });
+          await evaluate("document.querySelectorAll('.charts details').forEach(e => e.open = false)");
         }
         assert.match(view.text, /4 of 6 planned slices done across 3 epics/); assert.ok(view.fonts.includes('Slipgates Mono'));
         if (state === 'partial') assert.equal(await evaluate("[...document.querySelectorAll('.tiles .card')].filter(e => /Pull requests merged|People at work/.test(e.textContent)).every(e => e.textContent.match(/Data unavailable/g)?.length === 1 && getComputedStyle(e.querySelector('.none')).fontSize === '16px' && !e.querySelector('.stat'))"), true);

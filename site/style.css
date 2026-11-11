@@ -1,4 +1,4 @@
-/* Approved roadmap board, D6a subset: charts and detail panels follow separately. */
+/* Approved roadmap board; blocker details and theme variants follow separately. */
 *,*::before,*::after{box-sizing:border-box}
 html{color-scheme:light dark;font-synthesis:none;-webkit-text-size-adjust:100%}
 body{margin:0;min-height:100vh;background:var(--ab-shell);color:var(--ab-text);font:400 16px/1.5 var(--ab-font-sans);background-image:radial-gradient(60rem 28rem at 85% -8rem,color-mix(in srgb,var(--ab-bridge) 14%,transparent),transparent 70%);background-repeat:no-repeat}
@@ -36,7 +36,21 @@ h1{margin:0;font-size:clamp(1.75rem,4.5vw,2.75rem);line-height:1.1;font-weight:6
 .chip.done{color:var(--ab-text)}.chip.done svg{color:var(--ab-bridge)}.chip.blocked{color:var(--ab-needs-text);font-weight:600}.chip.blocked svg{color:var(--ab-needs)}
 .epic.is-blocked .bar i{background:var(--ab-neutral)}
 footer{margin-top:40px;color:var(--ab-text3);font-size:.8125rem;display:flex;flex-wrap:wrap;gap:8px 24px;border-top:1px solid var(--ab-stroke);padding-top:16px}
+.spark{width:100%;height:auto;display:block;color:var(--ab-bridge);margin-top:8px}
+.spark .area{fill:color-mix(in srgb,var(--ab-bridge) 16%,transparent)}.spark .dot{fill:currentColor}
+.spark .line{fill:none;stroke:currentColor;stroke-width:2;stroke-linejoin:round;stroke-linecap:round;stroke-dasharray:1;animation:draw 1.2s ease-out both}
+.spark .axis{stroke:var(--ab-stroke2)}@keyframes draw{from{stroke-dashoffset:1}}
+.bars{display:flex;align-items:flex-end;gap:4px;height:96px;margin-top:12px}
+.bars i{flex:1;min-width:0;height:var(--h);background:color-mix(in srgb,var(--ab-bridge) 45%,transparent);border-radius:var(--ab-radius-control) var(--ab-radius-control) 0 0;animation:rise .7s ease-out both}
+.bars i:last-child{background:var(--ab-bridge)}@keyframes rise{from{height:0}}
+.axis-l{display:flex;justify-content:space-between;color:var(--ab-text3);font-size:.75rem}
+.charts details{margin-top:12px;color:var(--ab-text2);font-size:.875rem}.charts summary{cursor:pointer;min-height:44px;display:list-item;padding:12px 0}
+.charts table{border-collapse:collapse;width:100%;margin-top:8px}.charts th,.charts td{text-align:left;padding:4px 8px;border-bottom:1px solid var(--ab-stroke)}
+.charts th:last-child,.charts td:last-child{text-align:right;font-variant-numeric:tabular-nums}.charts caption{text-align:left}
+.metrics{grid-template-columns:repeat(2,minmax(0,1fr));margin-top:16px}.metrics h3{margin:0 0 8px;font-size:.8125rem;color:var(--ab-text2)}
+@media(min-width:60rem){.charts{grid-template-columns:minmax(0,3fr) minmax(0,2fr)}}
 @media(min-width:48rem){.wrap{padding:0 32px 64px}.people{gap:24px}}
 @media(min-width:900px){.tiles{grid-template-columns:repeat(4,minmax(0,1fr))}}
-@media(prefers-reduced-motion:reduce){.bar i{animation:none}}
+@media(prefers-reduced-motion:reduce){.bar i,.bars i,.spark .line{animation:none}}
 @media(forced-colors:active){.bar{border:1px solid CanvasText;box-shadow:none}.bar i{background:Highlight}.card{border-color:CanvasText}}
+@media(forced-colors:active){.spark .line{stroke:Highlight}.spark .dot{fill:Highlight}.spark .area{fill:none}.bars i{background:GrayText;forced-color-adjust:none}.bars i:last-child{background:Highlight}}

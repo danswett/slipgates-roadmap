@@ -46,4 +46,8 @@ test('missing or malformed chart fields stay unavailable without hiding valid me
   const html = renderCharts({ pull_requests: { median_hours_to_merge: -1 }, ci: { median_minutes: '6.8' } });
   assert.equal(html.match(/Data unavailable/g)?.length, 4);
   assert.doesNotMatch(html, /class="spark"|--h:|NaN|Infinity/);
+  const stats = sample(); stats.pull_requests.merged_per_day[29].count = '29';
+  const partial = renderCharts(stats);
+  assert.match(partial, /class="spark"/); assert.doesNotMatch(partial, /--h:/);
+  assert.equal(partial.match(/Data unavailable/g)?.length, 1);
 });
