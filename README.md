@@ -25,6 +25,9 @@ open child blocks the epic; closed children do not. Label-only `blocked` or
 `status:blocked` children say `No blocker recorded` and appear in top-level
 `needsBlocker` (`epic`, `number`, `title`, `clearsIt`) for source correction.
 Only agent-bridge children contribute; cross-repository sub-issues are excluded.
+Epic badges name the first recorded cause and expand to every blocked child,
+its full blocker reason and clearing role. Label-only blocks say No blocker
+recorded and appear in Needs a blocker; private causes have no public issue link.
 
 Pages runs D1 (including D4 statistics) with its read-only token in the separate,
 continue-on-error data job; only `roadmap.json` reaches the token-free static build.
