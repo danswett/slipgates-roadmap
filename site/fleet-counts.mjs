@@ -7,19 +7,20 @@ const keys = ['schema', 'generatedAt', 'issuesOpen', 'issuesResolved', 'commits'
 const panel = (body) => `<section class="fleet-counts"><h2>slipgates-fleet (private repo, counts only)</h2>${body}</section>`;
 const unavailable = (reason) => {
   console.error(`Fleet counts unavailable: ${reason}`);
-  return panel('<p>Fleet counts unavailable</p>');
+  return undefined;
 };
 
-export function renderFleetCounts(path) {
+export function readFleetCounts(path) {
   let value;
   try { value = JSON.parse(readFileSync(path, 'utf8')); }
   catch (error) {
     if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error;
     return unavailable('missing or invalid file');
   }
-  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length !== keys.length ||
-    keys.some((key) => !Object.hasOwn(value, key)) || value.schema !== 1 ||
-    keys.some((key) => key !== 'generatedAt' &&
+  const allowed = Object.hasOwn(value ?? {}, 'prsMergedTotal') ? [...keys, 'prsMergedTotal'] : keys;
+  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length !== allowed.length ||
+    allowed.some((key) => !Object.hasOwn(value, key)) || value.schema !== 1 ||
+    allowed.some((key) => key !== 'generatedAt' &&
       (!Number.isInteger(value[key]) || value[key] < 0 || value[key] > 100000000)))
     return unavailable('invalid schema');
   const at = typeof value.generatedAt === 'string' ? Date.parse(value.generatedAt) : NaN;
@@ -32,6 +33,12 @@ export function renderFleetCounts(path) {
   const sum = (fields) => fields.reduce((total, key) => total + value[key], 0);
   if (value.prsMerged24h !== sum(hours) || value.prsMerged14d !== sum(days))
     return unavailable('inconsistent bin totals');
+  return value;
+}
+
+export function renderFleetCounts(value) {
+  if (!value) return panel('<p>Fleet counts unavailable</p>');
+  const at = Date.parse(value.generatedAt);
   const table = (fields, unit, step) => {
     const end = Math.floor(at / step) * step;
     return `<table aria-label="Fleet merges per ${unit}"><caption>Completed UTC ${unit}s, oldest first</caption>

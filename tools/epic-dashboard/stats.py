@@ -39,11 +39,13 @@ def summarize(source, now):
                 counts[key(at)] += 1
         return [{"at": at, "count": count} for at, count in counts.items()]
 
-    for name in ("issue_counts", "closed_issues", "commits", "pulls", "runs"):
+    for name in ("issue_counts", "closed_issues", "commits", "pulls", "runs", "prsMergedTotal"):
         if name not in source:
             missing({"issue_counts": "issues", "pulls": "pull requests", "runs": "CI"}.get(name, name))
     if "issue_counts" in source:
         result["issues"] = {"counts": source["issue_counts"]}
+    if "prsMergedTotal" in source:
+        result["prsMergedTotal"] = source["prsMergedTotal"]
     if "closed_issues" in source and "issues" in result:
         result["issues"]["resolved_per_day"] = series((i["closedAt"] for i in source["closed_issues"]), 14)
     if "commits" in source:
@@ -164,7 +166,9 @@ def collect(run, now=None, budget=60):
                 source["unavailable"].append(f"Data unavailable: {repo} {field}: {reason}")
 
         def totals():
-            data = graphql("isPrivate open:issues(states:OPEN){totalCount} resolved:issues(states:CLOSED){totalCount}")
+            data = graphql("isPrivate open:issues(states:OPEN){totalCount} resolved:issues(states:CLOSED){totalCount}"
+                           "merged:pullRequests(states:MERGED){totalCount}")
+            source["prsMergedTotal"] = data["merged"]["totalCount"]
             opened, resolved = data["open"]["totalCount"], data["resolved"]["totalCount"]
             return {"total": opened + resolved, "open": opened, "resolved": resolved}
 

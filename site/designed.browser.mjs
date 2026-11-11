@@ -16,7 +16,7 @@ test('designed roadmap renders on phone and desktop without outside requests', {
         blockedChildren: [{ number: 7, title: 'Row menu on a phone', clearsIt: 'Creative', blockers: [{ number: 1925, title: 'Phone layout decision', reason: 'waiting on the phone layout decision from the design review next week', clearsIt: 'Creative' }] },
           { number: 9, title: 'Missing source blocker', clearsIt: 'Unassigned', blockers: [{ number: null, title: 'No blocker recorded', reason: 'No blocker recorded', clearsIt: 'Unassigned' }] }] },
       { number: 3, title: 'No slices yet', closed: 0, open: 0, priority_order: 3, open_prs: 0, merged_last_24h: 0, blockers: [] }],
-    stats: { 'danswett/agent-bridge': { commits: { total: 456 }, issues: { counts: { total: 123, resolved: 90 } },
+    stats: { 'danswett/agent-bridge': { prsMergedTotal: 100, commits: { total: 456 }, issues: { counts: { total: 123, resolved: 90 } },
       merges: { last_24_hours: 17, per_hour: Array.from({ length: 48 }, (_, i) => ({ at: new Date((Math.floor(Date.now() / 3600000) - 47 + i) * 3600000).toISOString(), count: i % 8 })) },
       pull_requests: { merged_per_day: Array.from({ length: 30 }, (_, i) => ({ at: new Date(Date.UTC(2026, 9, 1 + i)).toISOString().slice(0, 10), count: i })), median_hours_to_merge: 1.25 },
       ci: { median_minutes: 6.8 } } } };
@@ -48,7 +48,7 @@ test('designed roadmap renders on phone and desktop without outside requests', {
     await send('Network.enable'); await send('Page.enable');
     await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }, { name: 'prefers-reduced-motion', value: 'reduce' }] });
     for (const width of [390, 820, 1180, 1376]) for (const state of ['fresh', 'partial', 'missing', 'stale']) {
-      writeFileSync(data, JSON.stringify(state === 'missing' ? { error: 'Repository read failed' } : { ...value, ...(state === 'partial' ? { people: undefined, totals: undefined, stats: { 'danswett/agent-bridge': { ...value.stats['danswett/agent-bridge'], merges: { last_24_hours: 17 }, pull_requests: undefined, ci: undefined } } } : {}), ...(state === 'stale' ? { updatedAt: new Date(Date.now() - 3600000).toISOString() } : {}) }));
+      writeFileSync(data, JSON.stringify(state === 'missing' ? { error: 'Repository read failed' } : { ...value, ...(state === 'partial' ? { people: undefined, totals: undefined, stats: { 'danswett/agent-bridge': { ...value.stats['danswett/agent-bridge'], prsMergedTotal: undefined, merges: { last_24_hours: 17 }, pull_requests: undefined, ci: undefined } } } : {}), ...(state === 'stale' ? { updatedAt: new Date(Date.now() - 3600000).toISOString() } : {}) }));
       const build = spawnSync(process.execPath, ['site/build.mjs', data, out], { encoding: 'utf8' }); assert.equal(build.status, 0, build.stderr);
       await send('Emulation.setDeviceMetricsOverride', { width, height: 1000, deviceScaleFactor: 1, mobile: false });
       await send('Emulation.setTouchEmulationEnabled', { enabled: width === 390, maxTouchPoints: 1 });
