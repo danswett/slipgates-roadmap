@@ -150,8 +150,12 @@ class BlockerTests(unittest.TestCase):
     def test_private_sub_issue_cannot_publish_its_title_or_body(self):
         self.child.update(title="PRIVATE child", body="Blocked by #55: PRIVATE reason",
                           repository={"nameWithOwner": "danswett/slipgates-fleet"})
-        with self.assertRaisesRegex(ValueError, "Non-public sub-issues are not supported"):
-            self.generate()
+        data = self.generate()
+        self.assertNotIn("PRIVATE", json.dumps(data))
+        self.assertNotIn("209", json.dumps(data))
+        self.assertFalse(data["epics"][0]["blocked"])
+        self.assertEqual(0, data["epics"][0]["open"])
+        self.assertEqual([], data["needsBlocker"])
 
     def test_read_fetches_bodies_relations_and_only_public_fallback_titles(self):
         self.child["body"] = "Blocked by #55 and danswett/slipgates-fleet#313"
