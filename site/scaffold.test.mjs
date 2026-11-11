@@ -56,8 +56,9 @@ test('fresh D1/D4 data renders agent-bridge only, its update time and safe total
       commits: { total: 987652 }, merges: { last_24_hours: 987651 } };
     const privateStats = { 'danswett/agent-bridge': stats['danswett/agent-bridge'],
       'danswett/slipgates-fleet': { unavailable: ['Data unavailable: repository is not publicly readable'] } };
-    const value = { updatedAt, epics: [{ number: 749, title: '<script>Trust & safety</script>', closed: 7, open: 3 },
-      { number: 999, title: 'Private fleet epic', closed: 8, open: 1, repository: 'danswett/slipgates-fleet' }], stats };
+    const details = { priority_order: 1, open_prs: 2, merged_last_24h: 4, blockers: [] };
+    const value = { updatedAt, epics: [{ ...details, number: 749, title: '<script>Trust & safety</script>', closed: 7, open: 3 },
+      { ...details, number: 999, title: 'Private fleet epic', closed: 8, open: 1, repository: 'danswett/slipgates-fleet' }], stats };
     for (const change of [{}, { updatedAt: new Date(Date.now() - 3600000).toISOString() },
       { error: 'Repository read failed' }, { error: '' }, { updatedAt: null }, { epics: null }, { stats: null },
       { updatedAt: new Date(Date.now() + 3600000).toISOString() }, { stats: { 'danswett/agent-bridge': {} } },

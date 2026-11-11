@@ -2,6 +2,7 @@ import { readFileSync, mkdirSync, writeFileSync, cpSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { renderFleetCounts } from './fleet-counts.mjs';
+import { renderEpics, validEpicDetails } from './epics.mjs';
 
 const [data = 'data/roadmap.json', out = '_site', fleet = 'data/fleet-counts.json'] = process.argv.slice(2);
 let value, reason = '';
@@ -14,7 +15,7 @@ try {
     reason = 'Data artifact is missing a valid update time or is out of date.';
   else if (!Array.isArray(value.epics) || !value.stats || typeof value.stats !== 'object' || Array.isArray(value.stats) ||
     value.epics.some((epic) => !epic || typeof epic.title !== 'string' ||
-      ![epic.number, epic.closed, epic.open].every((n) => Number.isSafeInteger(n) && n >= 0)))
+      ![epic.number, epic.closed, epic.open].every((n) => Number.isSafeInteger(n) && n >= 0) || !validEpicDetails(epic)))
     reason = 'Data artifact has invalid epic or statistics fields.';
 } catch (error) {
   if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error;
@@ -33,16 +34,11 @@ const count = (n) => {
 };
 const stats = value?.stats?.['danswett/agent-bridge'], issues = stats?.issues?.counts;
 const glyph = (body) => `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
-const check = glyph('<path d="M4.5 10.5l3.5 3.5 7.5-8"/>'), warn = glyph('<path d="M10 3l7.5 13h-15zM10 8.5v3.5M10 14.5v.01"/>');
+const warn = glyph('<path d="M10 3l7.5 13h-15zM10 8.5v3.5M10 14.5v.01"/>');
 const clock = glyph('<circle cx="10" cy="10" r="7"/><path d="M10 6v4l2.5 2.5"/>');
 const mark = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8L13 8C10.791 8 9 9.791 9 12L6 12C6 8.134 9.134 5 13 5L21 5ZM3 16L11 16C13.209 16 15 14.209 15 12L18 12C18 15.866 14.866 19 11 19L3 19Z" fill="currentColor"/></svg>';
 const percent = (done, total) => total ? Math.round(done / total * 100) : 0;
 const bar = (done, total, label, small = false) => `<div class="bar${small ? ' sm' : ''}" role="progressbar" aria-label="${escape(label)}" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${done}" aria-valuetext="${done} of ${total} ${label === 'Issues resolved' ? 'resolved' : 'slices done'}"><i style="--p:${percent(done, total)}%"></i></div>`;
-function renderEpic(e) {
-  const total = e.closed + e.open, blocked = Array.isArray(e.blockers) && e.blockers.length > 0;
-  const chip = blocked ? `<span class="chip blocked">${warn}Blocked</span>` : (total > 0 && e.closed === total) || e.state === 'CLOSED' ? `<span class="chip done">${check}Done</span>` : '';
-  return `<li class="card epic${blocked ? ' is-blocked' : ''}"><h3><a href="https://github.com/danswett/agent-bridge/issues/${e.number}"><span class="id mono">#${e.number}</span>${escape(e.title)}</a></h3><span class="pct num">${percent(e.closed, total)}%</span>${bar(e.closed, total, e.title, true)}<div class="meta"><span>${e.closed} of ${total} done</span>${chip}</div></li>`;
-}
 const epics = reason ? [] : value.epics.filter((e) => !e.repository || e.repository === 'danswett/agent-bridge');
 const done = epics.reduce((n, e) => n + e.closed, 0), total = epics.reduce((n, e) => n + e.closed + e.open, 0);
 const tile = (title, body) => `<div class="card"><h2>${title}</h2>${body}</div>`;
@@ -57,7 +53,7 @@ const content = reason
 ${tile('Pull requests merged', number(value.totals?.prsMerged) + `<div class="sub">${count(stats?.merges?.last_24_hours)} in the last 24 h</div>`)}
 ${tile('Issues resolved', `<div class="stat num">${count(issues?.resolved)}<small>of ${count(issues?.total)}</small></div>` + ([issues?.resolved, issues?.total].every(Number.isSafeInteger) && issues.resolved >= 0 && issues.total >= issues.resolved ? bar(issues.resolved, issues.total, 'Issues resolved', true) : ''))}
 ${tile('People at work', `<div class="people"><div>${number(value.people?.builders)}<span class="sub">builders</span></div><div>${number(value.people?.reviewers)}<span class="sub">reviewers</span></div></div>`)}</div>
-<section class="grid" aria-labelledby="h-ep"><h2 id="h-ep">Epics</h2><ul class="epics">${epics.map(renderEpic).join('')}</ul></section>`;
+<section class="grid" aria-labelledby="h-ep"><h2 id="h-ep">Epics</h2><ul class="epics">${renderEpics(epics, escape)}</ul></section>`;
 mkdirSync(out, { recursive: true });
 for (const asset of ['tokens.css', 'style.css', 'fonts']) cpSync(fileURLToPath(new URL(asset, import.meta.url)), join(out, asset), { recursive: true });
 writeFileSync(join(out, 'CNAME'), 'roadmap.slipgates.com\n');
