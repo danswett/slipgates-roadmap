@@ -27,8 +27,9 @@ export function renderPeopleCounts(value) {
   if (!value) return '<div class="none">Data unavailable</div>';
   const at = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles',
     month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(value.generatedAt));
+  const timestamp = value.generatedAt.replaceAll('&', '&amp;').replaceAll('"', '&quot;');
   return `<div class="people">${['builders', 'reviewers'].map((role) =>
     `<div><div class="stat num">${value[role]}</div><span class="sub">${role}</span></div>`).join('')}</div>
-<div class="sub">Generated <time data-people-generated-at datetime="${value.generatedAt}">${at} PT</time>
-<span class="people-stale" data-people-stale hidden role="status">Stale</span></div>`;
+<div class="sub">Updated at <time data-people-generated-at datetime="${timestamp}">${at} PT</time>
+<span class="people-stale" data-people-stale role="status">Stale</span></div>`;
 }

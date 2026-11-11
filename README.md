@@ -61,6 +61,8 @@ time and adds a visible Stale badge once their age exceeds 15 minutes. A same-or
 module checks on load, every second, and on page/visibility resume; it makes no
 network requests and changes neither counts nor timestamps. The CSP allows only
 same-origin scripts, not inline scripts. Build-time validation is unchanged.
+Without JavaScript or if the module fails to load, the last built counts retain
+their producer Updated at time and a permanently visible Stale badge.
 The private producer counts working SG Builder/Worker and SG Reviewer sessions,
 plus idle/waiting sessions whose state changed within 30 minutes. State-change
 time is a proxy for activity, not a true last-activity time; leads are excluded.
