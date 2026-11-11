@@ -14,6 +14,7 @@ def ago(hours):
 
 def fixture():
     return {
+        "prsMergedTotal": 3,
         "issue_counts": {"total": 10, "open": 4, "resolved": 6},
         "closed_issues": [{"closedAt": ago(1)}, {"closedAt": ago(48)}],
         "pulls": [{
@@ -46,6 +47,7 @@ class ThroughputTests(unittest.TestCase):
         self.assertEqual(len(data["merges"]["per_hour"]), 48)
         self.assertEqual([data["merges"][key] for key in ["last_hour", "last_24_hours", "last_7_days"]], [1, 3, 3])
         self.assertEqual(data["commits"]["total"], 1234)
+        self.assertEqual(data["prsMergedTotal"], 3)
         self.assertEqual(sum(bucket["count"] for bucket in data["commits"]["per_day"]), 2)
         self.assertEqual(len(data["pull_requests"]["opened_per_day"]), 30)
         self.assertEqual(data["pull_requests"]["median_hours_to_merge"], 24)
@@ -114,6 +116,11 @@ class ThroughputTests(unittest.TestCase):
             page = {"hasNextPage": False, "endCursor": None}
             if "open:issues" in query:
                 data = {"open": {"totalCount": 4}, "resolved": {"totalCount": 6}}
+                pulls = fixture()["pulls"] + [{"createdAt": ago(900), "mergedAt": ago(800)}]
+                pulls.extend({"createdAt": ago(2), "mergedAt": None, "state": state}
+                             for state in ("CLOSED", "OPEN"))
+                if "merged:pullRequests(states:MERGED)" in query:
+                    data["merged"] = {"totalCount": sum(bool(p["mergedAt"]) for p in pulls)}
             elif "issues(first" in query:
                 second = 'after:"next"' in query
                 data = {"issues": {"nodes": [{"closedAt": ago(400 if second else 1), "updatedAt": ago(400 if second else 1)}],
@@ -130,6 +137,8 @@ class ThroughputTests(unittest.TestCase):
         data = collect(run, NOW, budget=16)
         self.assertEqual(len(calls), 16)
         self.assertEqual(data["danswett/agent-bridge"]["commits"]["total"], 1234)
+        self.assertEqual(data["danswett/agent-bridge"]["prsMergedTotal"], 4)
+        self.assertEqual(data["danswett/agent-bridge"]["merges"]["last_24_hours"], 3)
         self.assertEqual(data["danswett/slipgates-fleet"]["issues"]["counts"]["total"], 10)
         calls.clear()
         self.assertIn("unavailable", collect(run, NOW, budget=1)["danswett/slipgates-fleet"])
