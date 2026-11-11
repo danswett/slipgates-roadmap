@@ -7,6 +7,7 @@ import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
+from stats import collect
 
 R = "danswett/agent-bridge"
 PACIFIC = ZoneInfo("America/Los_Angeles")
@@ -44,7 +45,7 @@ def read():
             'pageInfo{hasNextPage} nodes{number state mergedAt repository{nameWithOwner}}}}}}}}',
             ("repository", "issue", "subIssues"))
     priority = json.loads(run("gh", "api", f"repos/{R}/issues/696"))["body"]
-    return {"epics": epics, "priority_body": priority}
+    return {"epics": epics, "priority_body": priority, "stats": collect(run)}
 
 
 def generate(snapshot, now=None):
@@ -91,6 +92,15 @@ def generate(snapshot, now=None):
         body.append(f'| [{title}](https://github.com/{R}/issues/{row["number"]}) | '
                     f'{row["closed"]}/{row["closed"] + row["open"]} | {row["open_prs"]} | '
                     f'{row["merged_last_24h"]} | {blocked} |')
+    if "stats" in snapshot:
+        data["stats"] = snapshot["stats"]
+        body.extend(["", "## Statistics"])
+        for name, stats in data["stats"].items():
+            counts = stats.get("issues", {}).get("counts", {})
+            body.append(f"**{name}**: {counts.get('resolved', '?')}/{counts.get('total', '?')} issues resolved; "
+                        f"{stats.get('merges', {}).get('last_24_hours', '?')} merges (24 h); "
+                        f"{stats.get('commits', {}).get('total', '?')} commits on main.")
+            body.extend(stats.get("unavailable", []))
     return data, "\n".join(body) + "\n"
 
 
