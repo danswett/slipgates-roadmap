@@ -35,11 +35,61 @@ test('five-minute and manual refresh include a separate scoped keepalive', () =>
   assert.doesNotMatch(job('build') + job('data'), /actions: write|\/enable/);
 });
 
+test('data job runs the merged D1/D4 generator with its read-only token and timestamps the artifact', () => {
+  assert.match(job('data'), /repo_dashboard\.py --json-output roadmap\.json/);
+  assert.match(job('data'), /GH_TOKEN: \$\{\{ github\.token \}\}/);
+  assert.match(job('data'), /persist-credentials: false/);
+  assert.match(job('data'), /updatedAt/);
+  assert.match(job('data'), /name: roadmap-data/);
+  assert.doesNotMatch(job('data'), /--write|npm|secrets\./);
+});
+
+test('fresh D1/D4 data renders agent-bridge only, its update time and safe totals', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'roadmap-'));
+  try {
+    const data = join(dir, 'data.json'), out = join(dir, 'out');
+    const updatedAt = new Date(Date.now() - 60000).toISOString();
+    const stats = Object.fromEntries(['danswett/agent-bridge', 'danswett/slipgates-fleet'].map((repo) =>
+      [repo, { issues: { counts: { total: 123, resolved: 90 } }, commits: { total: 456 },
+        merges: { last_24_hours: 17 } }]));
+    stats['danswett/slipgates-fleet'] = { issues: { counts: { total: 987654, resolved: 987653 } },
+      commits: { total: 987652 }, merges: { last_24_hours: 987651 } };
+    const privateStats = { 'danswett/agent-bridge': stats['danswett/agent-bridge'],
+      'danswett/slipgates-fleet': { unavailable: ['Data unavailable: repository is not publicly readable'] } };
+    const value = { updatedAt, epics: [{ number: 749, title: '<script>Trust & safety</script>', closed: 7, open: 3 },
+      { number: 999, title: 'Private fleet epic', closed: 8, open: 1, repository: 'danswett/slipgates-fleet' }], stats };
+    for (const change of [{}, { updatedAt: new Date(Date.now() - 3600000).toISOString() },
+      { error: 'Repository read failed' }, { error: '' }, { updatedAt: null }, { epics: null }, { stats: null },
+      { updatedAt: new Date(Date.now() + 3600000).toISOString() }, { stats: { 'danswett/agent-bridge': {} } },
+      { stats: privateStats }]) {
+      writeFileSync(data, JSON.stringify({ ...value, ...change }));
+      const run = spawnSync(process.execPath, ['site/build.mjs', data, out], { encoding: 'utf8' });
+      assert.equal(run.status, 0, run.stderr);
+      const html = readFileSync(join(out, 'index.html'), 'utf8');
+      assert.doesNotMatch(html, /<script\b|\b(?:src|href)=/i);
+      if (Object.keys(change).length && change.stats !== privateStats) {
+        assert.match(html, /Data unavailable/);
+        assert.match(run.stderr, /Data unavailable/);
+      } else {
+        assert.doesNotMatch(html, /Data unavailable/);
+        assert.match(html, new RegExp(`datetime="${updatedAt}"`));
+        assert.match(html, /#749.*&lt;script&gt;Trust &amp; safety&lt;\/script&gt;.*7 of 10/);
+        assert.match(html, /danswett\/agent-bridge/);
+        assert.match(html, /The private slipgates-fleet repository is not included\./);
+        assert.doesNotMatch(html, /<h2>danswett\/slipgates-fleet|Private fleet epic|#999|98765[1-4]/);
+        assert.match(html, /90 of 123/);
+        assert.match(html, /Commits on main: 456/);
+        assert.match(html, /Merged in 24 hours: 17/);
+      }
+    }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('missing or malformed data yields a timestamped static unavailable page; reasons are escaped', () => {
   const dir = mkdtempSync(join(tmpdir(), 'roadmap-'));
   try {
     const data = join(dir, 'data.json'), out = join(dir, 'out');
-    for (const input of [undefined, '{', JSON.stringify({ unavailable: '<script>bad</script>' })]) {
+    for (const input of [undefined, '{', 'null', '[]', JSON.stringify({ unavailable: '<script>bad</script>' })]) {
       if (input !== undefined) writeFileSync(data, input);
       const run = spawnSync(process.execPath, ['site/build.mjs', data, out], { encoding: 'utf8' });
       assert.equal(run.status, 0, run.stderr);
