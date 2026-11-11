@@ -8,6 +8,24 @@ through the caller's repository credential in `gh`; no Project access or new sec
 Read errors yield visible `Data unavailable` and JSON `error`, exit 0; write errors fail.
 Run `python -m unittest discover -s tools/epic-dashboard -v`; Windows Python needs `tzdata`.
 
+Blockers come from GitHub's blocked-by relation first, then issue-body lines:
+```
+Blocked by #55, #12: waiting on the roster and reply path
+Clears it: Engineering
+```
+Every reference on a `Blocked by` line is listed; a trailing reason is capped at
+80 characters, otherwise the blocker title is used. `Clears it` accepts only
+Engineering, Quality, Product, SRE, Creative, Migration or Owner; otherwise Unassigned.
+Only agent-bridge blocker titles/reasons are published; other repositories use
+`private item` for both (including qualified body references); no private blocker endpoint is queried.
+Each epic adds `blocked`, `blockerDetails` and `blockedChildren`; each detail has
+`number`, `title`, `reason`, `clearsIt`. Children include `number`, `title`, `blockers`,
+`clearsIt`. Existing `blockers` child-number arrays remain compatible. Any blocked
+open child blocks the epic; closed children do not. Label-only `blocked` or
+`status:blocked` children say `No blocker recorded` and appear in top-level
+`needsBlocker` (`epic`, `number`, `title`, `clearsIt`) for source correction.
+Only agent-bridge children contribute; cross-repository sub-issues are excluded.
+
 Pages runs D1 (including D4 statistics) with its read-only token in the separate,
 continue-on-error data job; only `roadmap.json` reaches the token-free static build.
 The page shows agent-bridge epics and totals with the data's `updatedAt` time.

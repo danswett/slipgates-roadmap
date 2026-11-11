@@ -33,7 +33,7 @@ class ThroughputTests(unittest.TestCase):
         import repo_dashboard
         snapshot = {"epics": [], "priority_body": "", "stats": {"danswett/agent-bridge": summarize(fixture(), NOW)}}
         data, body = repo_dashboard.generate(snapshot, NOW)
-        self.assertEqual(set(data), {"epics", "stats"})
+        self.assertEqual(set(data), {"epics", "stats", "needsBlocker"})
         self.assertEqual(data["stats"], snapshot["stats"])
         self.assertEqual(data["epics"], [])
         self.assertIn("1234", body)

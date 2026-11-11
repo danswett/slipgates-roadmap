@@ -62,3 +62,112 @@ class RepositoryDashboardTests(unittest.TestCase):
         self.fixture["epics"][0]["children"][0]["closedByPullRequestsReferences"]["pageInfo"]["hasNextPage"] = True
         with self.assertRaisesRegex(ValueError, "Incomplete linked pull requests"):
             repo.generate(self.fixture)
+
+
+class BlockerTests(unittest.TestCase):
+    def setUp(self):
+        self.child = dict(number=209, title="Blocked slice", state="OPEN", body="",
+                          labels={"nodes": [{"name": "blocked"}]},
+                          blockedBy={"nodes": [], "pageInfo": {"hasNextPage": False}},
+                          closedByPullRequestsReferences={"nodes": [], "pageInfo": {"hasNextPage": False}})
+        self.epic = dict(number=750, title="Reliability", state="OPEN", body="",
+                         labels={"nodes": []}, children=[self.child],
+                         blockedBy={"nodes": [], "pageInfo": {"hasNextPage": False}})
+        self.snapshot = {"epics": [self.epic], "priority_body": "", "blocker_titles": {"55": "Roster", "12": "Reply"}}
+
+    def generate(self):
+        return repo.generate(self.snapshot)[0]
+
+    def test_body_blocker_reason_role_and_epic_rollup(self):
+        self.child["labels"]["nodes"] = []
+        self.child["body"] = "Blocked by #55: waiting on roster\nClears it: Engineering"
+        data = self.generate()
+        epic = data["epics"][0]
+        blocker = {"number": 55, "title": "Roster", "reason": "waiting on roster", "clearsIt": "Engineering"}
+        self.assertTrue(epic["blocked"])
+        self.assertEqual([209], epic["blockers"])
+        self.assertEqual([blocker], epic["blockerDetails"])
+        self.assertEqual([dict(number=209, title="Blocked slice", blockers=[blocker], clearsIt="Engineering")],
+                         epic["blockedChildren"])
+        self.assertEqual([], data["needsBlocker"])
+
+    def test_unstated_blocker_is_explicit_and_needs_source_fix(self):
+        data = self.generate()
+        epic = data["epics"][0]
+        self.assertTrue(epic["blocked"])
+        self.assertEqual([dict(number=None, title="No blocker recorded", reason="No blocker recorded",
+                               clearsIt="Unassigned")], epic["blockedChildren"][0]["blockers"])
+        self.assertEqual([dict(epic=750, number=209, title="Blocked slice", clearsIt="Unassigned")],
+                         data["needsBlocker"])
+
+    def test_multiple_body_references_are_unique_and_reasons_bounded(self):
+        self.child["body"] = "Blocked by #55, #12 and #55: " + "x" * 100
+        blockers = self.generate()["epics"][0]["blockerDetails"]
+        self.assertEqual([55, 12], [b["number"] for b in blockers])
+        self.assertEqual(["x" * 80] * 2, [b["reason"] for b in blockers])
+        self.child["body"] = "Blocked by #55"
+        self.assertEqual("Roster", self.generate()["epics"][0]["blockerDetails"][0]["reason"])
+
+    def test_relation_beats_body_and_private_content_never_leaves_generator(self):
+        self.child["body"] = "Blocked by #12: PRIVATE reason\nClears it: Quality"
+        relation = {"number": 55, "title": "Roster", "repository": {"nameWithOwner": repo.R}}
+        self.child["blockedBy"]["nodes"] = [relation]
+        self.assertEqual([dict(number=55, title="Roster", reason="Roster", clearsIt="Quality")],
+                         self.generate()["epics"][0]["blockerDetails"])
+        self.child["body"] = "Blocked by #55: waiting on roster\nClears it: Quality"
+        self.assertEqual("waiting on roster", self.generate()["epics"][0]["blockerDetails"][0]["reason"])
+        relation.update(title="PRIVATE title", repository={"nameWithOwner": "danswett/slipgates-fleet"})
+        data, body = repo.generate(self.snapshot)
+        self.assertNotIn("PRIVATE", json.dumps(data) + body)
+        self.assertEqual(dict(number=55, title="private item", reason="private item", clearsIt="Quality"),
+                         data["epics"][0]["blockerDetails"][0])
+
+    def test_private_body_reference_is_redacted_and_unknown_role_is_unassigned(self):
+        for reference in ("danswett/slipgates-fleet#313",
+                          "https://github.com/danswett/slipgates-fleet/issues/313"):
+            self.child["body"] = f"Blocked by {reference}: PRIVATE reason\nClears it: PRIVATE person"
+            data, body = repo.generate(self.snapshot)
+            self.assertNotIn("PRIVATE", json.dumps(data) + body)
+            self.assertEqual(dict(number=313, title="private item", reason="private item", clearsIt="Unassigned"),
+                             data["epics"][0]["blockerDetails"][0])
+
+    def test_closed_children_do_not_block_but_epic_own_blockers_do(self):
+        self.child["state"] = "CLOSED"
+        epic = self.generate()["epics"][0]
+        self.assertFalse(epic["blocked"])
+        self.assertEqual([], epic["blockedChildren"])
+        self.epic["body"] = "Blocked by #12\nClears it: Product"
+        epic = self.generate()["epics"][0]
+        self.assertTrue(epic["blocked"])
+        self.assertEqual("Reply", epic["blockerDetails"][0]["reason"])
+        self.assertEqual("Product", epic["blockerDetails"][0]["clearsIt"])
+
+    def test_partial_blocker_relations_fail_visibly(self):
+        self.child["blockedBy"]["pageInfo"]["hasNextPage"] = True
+        with self.assertRaisesRegex(ValueError, "Incomplete blocker relations"):
+            self.generate()
+
+    def test_private_sub_issue_cannot_publish_its_title_or_body(self):
+        self.child.update(title="PRIVATE child", body="Blocked by #55: PRIVATE reason",
+                          repository={"nameWithOwner": "danswett/slipgates-fleet"})
+        data = self.generate()
+        self.assertNotIn("PRIVATE", json.dumps(data))
+        self.assertNotIn("209", json.dumps(data))
+        self.assertFalse(data["epics"][0]["blocked"])
+        self.assertEqual(0, data["epics"][0]["open"])
+        self.assertEqual([], data["needsBlocker"])
+
+    def test_read_fetches_bodies_relations_and_only_public_fallback_titles(self):
+        self.child["body"] = "Blocked by #55 and danswett/slipgates-fleet#313"
+        epic = {k: v for k, v in self.epic.items() if k != "children"}
+        with patch.object(repo, "nodes", side_effect=[[epic], [self.child]]) as nodes, \
+             patch.object(repo, "run", side_effect=[json.dumps({"body": ""}),
+                                                    json.dumps({"title": "Roster"})]) as run, \
+             patch.object(repo, "collect", return_value={}):
+            data = repo.read()
+        queries = " ".join(call.args[0] for call in nodes.call_args_list)
+        self.assertIn("body", queries)
+        self.assertIn("blockedBy", queries)
+        self.assertEqual(["repos/danswett/agent-bridge/issues/696", "repos/danswett/agent-bridge/issues/55"],
+                         [call.args[2] for call in run.call_args_list])
+        self.assertEqual("Roster", data["blocker_titles"]["55"])
