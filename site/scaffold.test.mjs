@@ -75,7 +75,7 @@ test('fresh D1/D4 data renders agent-bridge only, its update time and safe total
         assert.match(html, new RegExp(`datetime="${updatedAt}"`));
         assert.match(html, /#749.*&lt;script&gt;Trust &amp; safety&lt;\/script&gt;.*7 of 10/s);
         assert.match(html, /danswett\/agent-bridge/);
-        assert.match(html, /The private slipgates-fleet repository is not included\./);
+        assert.match(html, /Fleet counts unavailable/);
         assert.doesNotMatch(html, /<h2>danswett\/slipgates-fleet|Private fleet epic|#999|98765[1-4]/);
         assert.match(html, /90(?:<[^>]+>|\s)*of 123/);
         assert.match(html, /Commits.*456/s);
