@@ -66,7 +66,7 @@ test('fresh D1/D4 data renders agent-bridge only, its update time and safe total
       const run = spawnSync(process.execPath, ['site/build.mjs', data, out], { encoding: 'utf8' });
       assert.equal(run.status, 0, run.stderr);
       const html = readFileSync(join(out, 'index.html'), 'utf8');
-      assert.doesNotMatch(html, /<script\b|\b(?:src|href)=["'](?:https?:)?\/\//i);
+      assert.doesNotMatch(html, /<script\b|<(?:link|img|iframe)\b[^>]*\b(?:src|href)=["'](?:https?:)?\/\//i);
       if (Object.keys(change).length && change.stats !== privateStats) {
         assert.match(html, /Data unavailable/);
         assert.match(run.stderr, /Data unavailable/);
@@ -97,7 +97,7 @@ test('missing or malformed data yields a timestamped static unavailable page; re
       assert.match(html, /Data unavailable/);
       assert.match(html, /datetime="[^"]+">.* PT/);
       assert.match(html, /Content-Security-Policy/);
-      assert.doesNotMatch(html, /<script\b|\b(?:src|href)=["'](?:https?:)?\/\/|http-equiv="refresh"/i);
+      assert.doesNotMatch(html, /<script\b|<(?:link|img|iframe)\b[^>]*\b(?:src|href)=["'](?:https?:)?\/\/|http-equiv="refresh"/i);
       assert.match(run.stderr, /Data unavailable/);
       if (input?.includes('bad')) assert.match(html, /&lt;script&gt;bad&lt;\/script&gt;/);
     }

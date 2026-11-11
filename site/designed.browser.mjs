@@ -9,11 +9,11 @@ import { spawn, spawnSync } from 'node:child_process';
 test('designed roadmap renders on phone and desktop without outside requests', { timeout: 90000 }, async () => {
   const dir = mkdtempSync(join(tmpdir(), 'roadmap-design-')), out = join(dir, 'out');
   const data = join(dir, 'data.json'), requests = [], failures = [], pending = new Map();
-  const value = { updatedAt: new Date().toISOString(), people: { builders: 3, reviewers: 2 },
+  const value = { updatedAt: new Date().toISOString(), totals: { prsMerged: 100 }, people: { builders: 3, reviewers: 2 },
     epics: [{ number: 2, title: 'Finished', closed: 3, open: 0 }, { number: 1, title: 'Blocked', closed: 1, open: 2, blockers: [7] },
       { number: 3, title: 'No slices yet', closed: 0, open: 0 }],
     stats: { 'danswett/agent-bridge': { commits: { total: 456 }, issues: { counts: { total: 123, resolved: 90 } },
-      merges: { last_24_hours: 17 }, pull_requests: { total_merged: 100 } } } };
+      merges: { last_24_hours: 17 } } } };
   const server = createServer((req, res) => {
     const path = new URL(req.url, 'http://localhost').pathname;
     try { res.setHeader('Content-Type', path.endsWith('.css') ? 'text/css' : path.endsWith('.woff2') ? 'font/woff2' : 'text/html'); res.end(readFileSync(join(out, path === '/' ? 'index.html' : path.slice(1)))); }
@@ -29,7 +29,7 @@ test('designed roadmap renders on phone and desktop without outside requests', {
       let output = ''; browser.on('error', reject); browser.on('exit', (code) => reject(new Error(`Browser exited: ${code}\n${output}`)));
       browser.stderr.on('data', (chunk) => { output += chunk; const match = output.match(/DevTools listening on (ws:\/\/[^\s]+)/); if (match) resolve(match[1]); });
     });
-    const target = await (await fetch(`http://${new URL(endpoint).host}/json/new?${origin}`, { method: 'PUT' })).json();
+    const target = await (await fetch(`http://${new URL(endpoint).host}/json/new?about:blank`, { method: 'PUT' })).json();
     socket = new WebSocket(target.webSocketDebuggerUrl);
     await new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = reject; });
     socket.onmessage = ({ data }) => {
@@ -42,7 +42,7 @@ test('designed roadmap renders on phone and desktop without outside requests', {
     await send('Network.enable'); await send('Page.enable');
     await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }, { name: 'prefers-reduced-motion', value: 'reduce' }] });
     for (const width of [390, 1180]) for (const state of ['fresh', 'partial', 'missing', 'stale']) {
-      writeFileSync(data, JSON.stringify(state === 'missing' ? { error: 'Repository read failed' } : { ...value, ...(state === 'partial' ? { people: undefined, stats: { 'danswett/agent-bridge': { ...value.stats['danswett/agent-bridge'], pull_requests: undefined } } } : {}), ...(state === 'stale' ? { updatedAt: new Date(Date.now() - 3600000).toISOString() } : {}) }));
+      writeFileSync(data, JSON.stringify(state === 'missing' ? { error: 'Repository read failed' } : { ...value, ...(state === 'partial' ? { people: undefined, totals: undefined } : {}), ...(state === 'stale' ? { updatedAt: new Date(Date.now() - 3600000).toISOString() } : {}) }));
       const build = spawnSync(process.execPath, ['site/build.mjs', data, out], { encoding: 'utf8' }); assert.equal(build.status, 0, build.stderr);
       await send('Emulation.setDeviceMetricsOverride', { width, height: 1000, deviceScaleFactor: 1, mobile: false });
       await send('Page.navigate', { url: `${origin}/?${width}-${state}` });

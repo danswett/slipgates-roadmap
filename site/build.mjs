@@ -1,5 +1,6 @@
-import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { readFileSync, mkdirSync, writeFileSync, cpSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const [data = 'data/roadmap.json', out = '_site'] = process.argv.slice(2);
 let value, reason = '';
@@ -20,48 +21,50 @@ try {
 }
 if (reason) console.error(`Data unavailable: ${reason}`);
 const escape = (text) => text.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-const timestamp = !reason ? value.updatedAt : new Date().toISOString();
+const timestamp = typeof value?.updatedAt === 'string' && Number.isFinite(Date.parse(value.updatedAt)) ? value.updatedAt : new Date().toISOString();
 const updated = new Intl.DateTimeFormat('en-US', {
-  timeZone: 'America/Los_Angeles', dateStyle: 'medium', timeStyle: 'long',
-}).format(new Date(timestamp));
+  timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+}).format(new Date(timestamp)) + ' PT';
 const count = (n) => {
   if (Number.isSafeInteger(n) && n >= 0) return n;
   console.error('Data unavailable: a repository statistic is missing or invalid.');
   return 'Data unavailable';
 };
 const stats = value?.stats?.['danswett/agent-bridge'], issues = stats?.issues?.counts;
+const glyph = (body) => `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
+const check = glyph('<path d="M4.5 10.5l3.5 3.5 7.5-8"/>'), warn = glyph('<path d="M10 3l7.5 13h-15zM10 8.5v3.5M10 14.5v.01"/>');
+const clock = glyph('<circle cx="10" cy="10" r="7"/><path d="M10 6v4l2.5 2.5"/>');
+const mark = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8L13 8C10.791 8 9 9.791 9 12L6 12C6 8.134 9.134 5 13 5L21 5ZM3 16L11 16C13.209 16 15 14.209 15 12L18 12C18 15.866 14.866 19 11 19L3 19Z" fill="currentColor"/></svg>';
+const percent = (done, total) => total ? Math.round(done / total * 100) : 0;
+const bar = (done, total, label, small = false) => `<div class="bar${small ? ' sm' : ''}" role="progressbar" aria-label="${escape(label)}" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${done}" aria-valuetext="${done} of ${total} ${label === 'Issues resolved' ? 'resolved' : 'slices done'}"><i style="--p:${percent(done, total)}%"></i></div>`;
+function renderEpic(e) {
+  const total = e.closed + e.open, blocked = Array.isArray(e.blockers) && e.blockers.length > 0;
+  const chip = blocked ? `<span class="chip blocked">${warn}Blocked</span>` : (total > 0 && e.closed === total) || e.state === 'CLOSED' ? `<span class="chip done">${check}Done</span>` : '';
+  return `<li class="card epic${blocked ? ' is-blocked' : ''}"><h3><a href="https://github.com/danswett/agent-bridge/issues/${e.number}"><span class="id mono">#${e.number}</span>${escape(e.title)}</a></h3><span class="pct num">${percent(e.closed, total)}%</span>${bar(e.closed, total, e.title, true)}<div class="meta"><span>${e.closed} of ${total} done</span>${chip}</div></li>`;
+}
+const epics = reason ? [] : value.epics.filter((e) => !e.repository || e.repository === 'danswett/agent-bridge');
+const done = epics.reduce((n, e) => n + e.closed, 0), total = epics.reduce((n, e) => n + e.closed + e.open, 0);
+const tile = (title, body) => `<div class="card"><h2>${title}</h2>${body}</div>`;
+const number = (n) => { const result = count(n); return `<div class="${typeof result === 'number' ? 'stat num' : 'none'}">${result}</div>`; };
+const time = `<time datetime="${escape(timestamp)}">${escape(updated)}</time>`, stale = Date.now() - Date.parse(timestamp) > 15 * 60000;
+const stamp = `<span class="stamp${reason ? ' stale' : ''}">${reason ? warn : clock}<span>${stale ? 'Out of date. Last update ' : reason ? 'Data unavailable. ' : 'Updated '}${time}</span></span>`;
 const content = reason
-  ? `<h2>Data unavailable</h2><p>The roadmap could not read its data at ${escape(updated)}. It tries again every few minutes. Nothing is lost.</p><p>Data unavailable: ${escape(reason)}</p>`
-  : `<h2>Epics</h2>${value.epics.filter((e) => !e.repository || e.repository === 'danswett/agent-bridge')
-    .map((e) => `<p>#${e.number} ${escape(e.title)}: ${e.closed} of ${e.closed + e.open} done</p>`).join('')}
-<h2>danswett/agent-bridge</h2><p>Issues resolved: ${count(issues?.resolved)} of ${count(issues?.total)}</p>
-<p>Commits on main: ${count(stats?.commits?.total)}; Merged in 24 hours: ${count(stats?.merges?.last_24_hours)}</p>`;
+  ? `<section class="hero"><h1>Data unavailable</h1><p class="lede">The roadmap could not read its data at ${time}. It tries again every few minutes. Nothing is lost.</p><p>Data unavailable: ${escape(reason)}</p></section>`
+  : `<section class="hero"><h1>Where Slipgates stands</h1><p class="lede">Progress on each epic, and how fast the work is landing. Public repository data only.</p>
+<div class="hero-bar"><div class="row"><span class="big num">${percent(done, total)}%</span><span class="lbl">${done} of ${total} planned slices done across ${epics.length} epics</span></div>${bar(done, total, 'All epics')}</div></section>
+<div class="grid tiles" aria-label="Totals">${tile('Commits', number(stats?.commits?.total) + '<div class="sub">on main, all time</div>')}
+${tile('Pull requests merged', number(value.totals?.prsMerged) + `<div class="sub">${count(stats?.merges?.last_24_hours)} in the last 24 h</div>`)}
+${tile('Issues resolved', `<div class="stat num">${count(issues?.resolved)}<small>of ${count(issues?.total)}</small></div>` + ([issues?.resolved, issues?.total].every(Number.isSafeInteger) && issues.resolved >= 0 && issues.total >= issues.resolved ? bar(issues.resolved, issues.total, 'Issues resolved', true) : ''))}
+${tile('People at work', `<div class="people"><div>${number(value.people?.builders)}<span class="sub">builders</span></div><div>${number(value.people?.reviewers)}<span class="sub">reviewers</span></div></div>`)}</div>
+<section class="grid" aria-labelledby="h-ep"><h2 id="h-ep">Epics</h2><ul class="epics">${epics.map(renderEpic).join('')}</ul></section>`;
 mkdirSync(out, { recursive: true });
+for (const asset of ['tokens.css', 'style.css', 'fonts']) cpSync(fileURLToPath(new URL(asset, import.meta.url)), join(out, asset), { recursive: true });
 writeFileSync(join(out, 'CNAME'), 'roadmap.slipgates.com\n');
 writeFileSync(join(out, 'index.html'), `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
-<title>Slipgates roadmap</title><style>
-:root {
-  color-scheme: light; --cp-bg: #f7f4ef; --cp-bg-elevated: #fcfbf8; --cp-surface: #ffffff; --cp-surface-soft: #f5f5f5;
-  --cp-border: #dedede; --cp-border-strong: #919191; --cp-text: #242424; --cp-text-muted: #5c5c5c; --cp-text-soft: #6f6f6f;
-  --cp-accent: #b11f4b; --cp-accent-hover: #9a1a41; --cp-accent-soft: rgba(177, 31, 75, 0.08); --cp-accent-fg: #ffffff;
-  --cp-success: #16a34a; --cp-danger: #dc2626; --cp-warning: #f59e0b; --cp-link: #0078d4; --cp-shadow: 0 18px 48px rgba(0, 0, 0, 0.12);
-  --cp-overlay: rgba(255, 255, 255, 0.8); --cp-panel: rgba(255, 255, 255, 0.86); --cp-panel-strong: rgba(255, 255, 255, 0.96);
-  --cp-sheen: rgba(255, 255, 255, 0.55); --cp-highlight: rgba(177, 31, 75, 0.12);
-}
-@media (prefers-color-scheme: dark) { :root {
-  color-scheme: dark; --cp-bg: #3d3b3a; --cp-bg-elevated: #343231; --cp-surface: #292929; --cp-surface-soft: #2e2e2e;
-  --cp-border: #474747; --cp-border-strong: #5f5f5f; --cp-text: #dedede; --cp-text-muted: #919191; --cp-text-soft: #b0b0b0;
-  --cp-accent: #fd8ea1; --cp-accent-hover: #fb7b91; --cp-accent-soft: rgba(253, 142, 161, 0.14); --cp-accent-fg: #1a1a1a;
-  --cp-success: #4ade80; --cp-danger: #f87171; --cp-warning: #fbbf24; --cp-link: #4da6ff; --cp-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
-  --cp-overlay: rgba(41, 41, 41, 0.88); --cp-panel: rgba(41, 41, 41, 0.72); --cp-panel-strong: rgba(41, 41, 41, 0.96);
-  --cp-sheen: rgba(255, 255, 255, 0.04); --cp-highlight: rgba(253, 142, 161, 0.12);
-} }
-body { background: var(--cp-bg); color: var(--cp-text); margin: 32px; font-family: "Segoe UI", Aptos, Calibri, -apple-system, BlinkMacSystemFont, sans-serif; }
-main { max-width: 48rem; margin: auto; } p { overflow-wrap: anywhere; } small { color: var(--cp-text-muted); }
-</style></head><body><main><h1>Slipgates roadmap</h1>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; base-uri 'none'; form-action 'none'">
+<title>Slipgates roadmap</title><meta name="color-scheme" content="light dark"><link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="style.css">
+</head><body><div class="wrap"><header class="top"><a class="lockup" href="./">${mark}<span>Slipgates</span><span class="sep" aria-hidden="true">/</span><span>Roadmap</span></a>${stamp}</header><main>
 ${content}<p>The private slipgates-fleet repository is not included.</p>
-<p><small>Updated at <time datetime="${escape(timestamp)}">${escape(updated)}</time></small></p>
-</main></body></html>
+</main></div></body></html>
 `);
