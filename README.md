@@ -7,3 +7,7 @@ Uses public epic labels, sub-issues, linked PRs and #696 order, then priority la
 through the caller's repository credential in `gh`; no Project access or new secret.
 Read errors yield visible `Data unavailable` and JSON `error`, exit 0; write errors fail.
 Run `python -m unittest discover -s tools/epic-dashboard -v`; Windows Python needs `tzdata`.
+
+R1 publishes a static Data unavailable scaffold; generator hookup and panels follow.
+Cron refreshes every five minutes, best effort; the page shows its Pacific update time.
+The custom domain and CNAME file wait for DNS. Validate with `pwsh -File quality/run.ps1` (Node, Python and actionlint).

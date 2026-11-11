@@ -20,6 +20,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Workflow lint
+        run: |
+          curl -fsSL https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz -o "$RUNNER_TEMP/actionlint.tar.gz"
+          echo "023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum --check
+          tar xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint"
       - name: Node tests
         run: |
           if [ -z "$(find . -path ./node_modules -prune -o \( -name '*.test.mjs' -o -name '*.test.js' \) -print -quit)" ]; then
