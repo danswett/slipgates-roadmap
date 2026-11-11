@@ -78,6 +78,9 @@ test('merged tile sums validated all-time counts and labels a legacy fleet file 
   assert.match(combined, /class="stat num">889<\/div>/);
   assert.match(combined, /317 in the last 24 h/);
   assert.doesNotMatch(combined, /agent-bridge only|Data unavailable/);
+  const publicAt = combined.match(/data-generated-at="([^"]+)"/)?.[1];
+  assert.ok(publicAt && combined.includes(`agent-bridge Updated at <time data-people-generated-at datetime="${publicAt}"`));
+  assert.match(combined, /slipgates-fleet Updated at <time/);
   for (const fleet of [sample(), undefined, { ...counts, generatedAt: '1970-01-01T00:00:00Z' }]) {
     const partial = tile(render(fleet).html);
     assert.match(partial, /class="stat num">789<\/div>/);

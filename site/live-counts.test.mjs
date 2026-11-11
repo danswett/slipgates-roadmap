@@ -8,9 +8,9 @@ const fleet = () => ({ schema: 1, generatedAt: new Date().toISOString(), issuesO
   issuesResolved: 9, commits: 12345, prsMerged24h: 0, prsMerged14d: 0, prsMergedTotal: 99,
   ...Object.fromEntries(['Hour', 'Day'].flatMap((unit) => Array.from({ length: unit === 'Hour' ? 24 : 14 },
     (_, i) => [`merge${unit}${String(i).padStart(2, '0')}`, 0]))) });
-function page() {
+function page(merged) {
   const targets = { people: { innerHTML: 'LAST_GOOD_VALUE', dataset: {} }, fleet: { innerHTML: 'LAST_GOOD_VALUE', dataset: {} } };
-  return { targets, querySelector: (selector) => targets[selector.match(/data-live-counts="(people|fleet)"/)?.[1]] ?? null,
+  return { targets, querySelector: (selector) => selector === '[data-live-merged]' ? merged : targets[selector.match(/data-live-counts="(people|fleet)"/)?.[1]] ?? null,
     querySelectorAll: () => [] };
 }
 const request = (input = people()) => async (url) =>
@@ -31,6 +31,18 @@ test('view-time reads use only the two public paths with no credentials or redir
   const old = { ...people(), generatedAt: new Date(Date.now() - 7200000).toISOString() };
   await refreshLiveCounts(root, request(old));
   assert.ok(root.targets.people.innerHTML.includes(old.generatedAt), 'old but valid input keeps its honest time');
+});
+
+test('fresh fleet data cannot hide the public source age of old HTML', async () => {
+  const generatedAt = new Date(Date.now() - 10800000).toISOString();
+  const merged = { dataset: { total: '100', recent: '17', generatedAt }, innerHTML: '' };
+  await refreshLiveCounts(page(merged), request());
+  assert.match(merged.innerHTML, /class="stat num">199<\/div>/);
+  assert.ok(merged.innerHTML.includes(`agent-bridge Updated at <time data-people-generated-at datetime="${generatedAt}"`));
+  assert.match(merged.innerHTML, /slipgates-fleet Updated at <time/);
+  merged.dataset.generatedAt = '';
+  await refreshLiveCounts(page(merged), request());
+  assert.match(merged.innerHTML, /agent-bridge Update time unavailable/);
 });
 
 test('invalid, blocked and oversized data cannot retain a last good value or leak rejected text', async (t) => {

@@ -11,7 +11,7 @@ test('designed roadmap renders on phone and desktop without outside requests', {
   const data = join(dir, 'data.json'), people = join(dir, 'people.json'), requests = [], failures = [], pending = new Map();
   const raw = 'https://raw.githubusercontent.com/danswett/slipgates-roadmap/fleet-counts/';
   const publicUrls = [`${raw}people-at-work.json`, `${raw}fleet-counts.json`], expectedFailures = new Set();
-  let fixtureMode = 'fresh';
+  let fixtureMode = 'fresh', fixtureAt;
   const value = { updatedAt: new Date().toISOString(), totals: { prsMerged: 100 }, people: { builders: 3, reviewers: 2 },
     epics: [{ number: 2, title: 'Finished', closed: 3, open: 0, priority_order: 1, open_prs: 0, merged_last_24h: 4, blockers: [] },
       { number: 1, title: 'Blocked', closed: 1, open: 2, priority_order: 2, open_prs: 2, merged_last_24h: 1, blockers: [7],
@@ -23,6 +23,7 @@ test('designed roadmap renders on phone and desktop without outside requests', {
       merges: { last_24_hours: 17, per_hour: Array.from({ length: 48 }, (_, i) => ({ at: new Date((Math.floor(Date.now() / 3600000) - 47 + i) * 3600000).toISOString(), count: i % 8 })) },
       pull_requests: { merged_per_day: Array.from({ length: 30 }, (_, i) => ({ at: new Date(Date.UTC(2026, 9, 1 + i)).toISOString().slice(0, 10), count: i })), median_hours_to_merge: 1.25 },
       ci: { median_minutes: 6.8 } } } };
+  fixtureAt = value.updatedAt;
   const server = createServer((req, res) => {
     const path = new URL(req.url, 'http://localhost').pathname;
     try { res.setHeader('Content-Type', path.endsWith('.mjs') ? 'text/javascript' : path.endsWith('.css') ? 'text/css' : path.endsWith('.woff2') ? 'font/woff2' : 'text/html'); res.end(readFileSync(join(out, path === '/' ? 'index.html' : path.slice(1)))); }
@@ -49,8 +50,8 @@ test('designed roadmap renders on phone and desktop without outside requests', {
         assert.ok(publicUrls.includes(request.url)); assert.ok(!Object.keys(request.headers).some(key => /^(authorization|cookie)$/i.test(key)));
         if (fixtureMode === 'blocked') { expectedFailures.add(networkId); void send('Fetch.failRequest', { requestId, errorReason: 'BlockedByClient' }); }
         else {
-          const sample = request.url.endsWith('people-at-work.json') ? { schema: 1, generatedAt: value.updatedAt, builders: 7, reviewers: 4 }
-            : { schema: 1, generatedAt: value.updatedAt, issuesOpen: 4, issuesResolved: 9, commits: 12345, prsMerged24h: 0, prsMerged14d: 0, prsMergedTotal: 99,
+          const sample = request.url.endsWith('people-at-work.json') ? { schema: 1, generatedAt: fixtureAt, builders: 7, reviewers: 4 }
+            : { schema: 1, generatedAt: fixtureAt, issuesOpen: 4, issuesResolved: 9, commits: 12345, prsMerged24h: 0, prsMerged14d: 0, prsMergedTotal: 99,
               ...Object.fromEntries(['Hour', 'Day'].flatMap(unit => Array.from({ length: unit === 'Hour' ? 24 : 14 }, (_, i) => [`merge${unit}${String(i).padStart(2, '0')}`, 0]))) };
           void send('Fetch.fulfillRequest', { requestId, responseCode: 200, responseHeaders: [{ name: 'Content-Type', value: 'application/json' }, { name: 'Access-Control-Allow-Origin', value: '*' }], body: Buffer.from(JSON.stringify(sample)).toString('base64') });
         }
@@ -61,7 +62,7 @@ test('designed roadmap renders on phone and desktop without outside requests', {
     const evaluate = async (expression) => { const result = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }); assert.equal(result.exceptionDetails, undefined, JSON.stringify(result)); return result.result.value; };
     await send('Network.enable'); await send('Page.enable');
     await send('Fetch.enable', { patterns: [{ urlPattern: `${raw}*`, requestStage: 'Request' }] });
-    const liveReady = () => evaluate("new Promise((resolve, reject) => { let tries = 0; const check = () => [...document.querySelectorAll('[data-live-counts]')].every(e => e.dataset.liveState) ? resolve() : ++tries > 300 ? reject(new Error('Live fixtures did not finish')) : setTimeout(check, 10); check(); })");
+    const liveReady = (state = 'ready') => evaluate(`new Promise((resolve, reject) => { let tries = 0; const check = () => [...document.querySelectorAll('[data-live-counts]')].every(e => e.dataset.liveState === '${state}') ? resolve() : ++tries > 300 ? reject(new Error('Live fixtures did not finish')) : setTimeout(check, 10); check(); })`);
     await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }, { name: 'prefers-reduced-motion', value: 'reduce' }] });
     for (const width of [390, 820, 1180, 1376]) for (const state of ['fresh', 'partial', 'missing', 'stale']) {
       fixtureMode = state === 'partial' ? 'blocked' : 'fresh';
@@ -72,7 +73,7 @@ test('designed roadmap renders on phone and desktop without outside requests', {
       await send('Emulation.setTouchEmulationEnabled', { enabled: width === 390, maxTouchPoints: 1 });
       await send('Page.navigate', { url: `${origin}/?${width}-${state}` });
       await evaluate("new Promise(r => { const ready = async () => { await document.fonts.ready; r(true); }; document.readyState === 'complete' ? ready() : addEventListener('load', ready, {once:true}); })");
-      await liveReady();
+      await liveReady(fixtureMode === 'blocked' ? 'unavailable' : 'ready');
       const view = await evaluate(`({ title: document.querySelector('h1')?.textContent, header: document.querySelector('.lockup')?.textContent, tiles: document.querySelectorAll('.tiles .card').length, epics: [...document.querySelectorAll('.epic')].map(e => ({ id: e.querySelector('a')?.textContent, bar: e.querySelector('[role=progressbar]')?.getAttribute('aria-valuetext'), chip: e.querySelector('.chip')?.textContent })), overflow: document.documentElement.scrollWidth > innerWidth, fonts: [...document.fonts].filter(f => f.status === 'loaded').map(f => f.family), targets: [...document.querySelectorAll('a')].filter(a => a.getClientRects().length).every(a => a.getBoundingClientRect().height >= 44), motion: [...document.querySelectorAll('.bar i')].every(e => getComputedStyle(e).animationName === 'none'), text: document.body.textContent })`);
       const style = await evaluate(`({ repeat: getComputedStyle(document.body).backgroundRepeat, height: document.body.getBoundingClientRect().height, footer: document.querySelector('footer') && { size: getComputedStyle(document.querySelector('footer')).fontSize, color: getComputedStyle(document.querySelector('footer')).color, text3: getComputedStyle(document.body).getPropertyValue('--ab-text3').trim(), border: getComputedStyle(document.querySelector('footer')).borderTopStyle }, columns: document.querySelector('.tiles') && getComputedStyle(document.querySelector('.tiles')).gridTemplateColumns.split(' ').length })`);
       assert.equal(style.repeat, 'no-repeat'); assert.ok(style.height >= 1000); assert.equal(style.footer?.size, '13px'); assert.equal(style.footer.border, 'solid');
@@ -126,6 +127,21 @@ test('designed roadmap renders on phone and desktop without outside requests', {
           assert.deepEqual(await evaluate("[...document.querySelectorAll('.people .stat')].map(e => e.textContent)"), ['7', '4']);
           assert.equal(await evaluate("[...document.querySelectorAll('[data-people-stale]')].every(e => !e.hidden)"), true);
           assert.equal(await evaluate("document.documentElement.scrollWidth > innerWidth"), false);
+          fixtureAt = new Date(producerAt + 7200000).toISOString();
+          await send('Page.navigate', { url: `${origin}/?${width}-old-html-fresh-fleet` });
+          await evaluate("new Promise(r => document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true }))");
+          await liveReady();
+          assert.deepEqual(await evaluate("[...document.querySelectorAll('[data-live-merged] time')].map(e => ({ at: e.dateTime, stale: !e.parentElement.querySelector('[data-people-stale]').hidden }))"),
+            [{ at: value.updatedAt, stale: true }, { at: fixtureAt, stale: false }], 'fresh fleet must not freshen the baked public component');
+          const beforeResume = requests.filter(url => publicUrls.includes(url)).length;
+          fixtureMode = 'blocked';
+          await evaluate("dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }))");
+          await liveReady('unavailable');
+          assert.equal(requests.filter(url => publicUrls.includes(url)).length, beforeResume + 2, 'persisted resume rereads both fixed public files');
+          assert.equal(await evaluate("[...document.querySelectorAll('[data-live-counts]')].every(e => /unavailable/i.test(e.textContent)) && document.querySelector('[data-live-merged] .stat').textContent === '100'"), true);
+          fixtureMode = 'fresh'; fixtureAt = value.updatedAt;
+          await evaluate("dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }))");
+          await liveReady();
           await send('Page.removeScriptToEvaluateOnNewDocument', { identifier: injected.identifier });
           await evaluate("document.querySelectorAll('.charts details').forEach(e => e.open = true)");
           assert.equal(await evaluate("document.documentElement.scrollWidth > innerWidth"), false);
