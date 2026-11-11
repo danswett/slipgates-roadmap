@@ -16,6 +16,7 @@ const updated = new Intl.DateTimeFormat('en-US', {
   timeZone: 'America/Los_Angeles', dateStyle: 'medium', timeStyle: 'long',
 }).format(new Date());
 mkdirSync(out, { recursive: true });
+writeFileSync(join(out, 'CNAME'), 'roadmap.slipgates.com\n');
 writeFileSync(join(out, 'index.html'), `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
