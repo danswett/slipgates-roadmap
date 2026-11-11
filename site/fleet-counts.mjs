@@ -28,14 +28,20 @@ export function validateFleetCounts(value, now = Date.now(), maxAge = 7200000) {
   return value;
 }
 
-const stamp = (value) => `<div class="sub">Updated at <time data-people-generated-at datetime="${value.generatedAt}">${value.generatedAt}</time> (UTC)
+const stamp = (value, label = '') => {
+  if (typeof value.generatedAt !== 'string' || !Number.isFinite(Date.parse(value.generatedAt)))
+    return `<div class="sub">${label}Update time unavailable</div>`;
+  const timestamp = value.generatedAt.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+  return `<div class="sub">${label}Updated at <time data-people-generated-at datetime="${timestamp}">${timestamp}</time> (UTC)
 <span class="people-stale" data-people-stale role="status">Stale</span></div>`;
+};
 
-export function renderMergedCounts(total, recent, fleet) {
+export function renderMergedCounts(total, recent, fleet, publicGeneratedAt) {
   const count = (n) => Number.isSafeInteger(n) && n >= 0 ? n : 'Data unavailable';
   const all = count(total), last = count(recent), combined = typeof all === 'number' && fleet?.prsMergedTotal !== undefined;
   const detail = `<div class="sub">${typeof last === 'number' && combined ? count(last + fleet.prsMerged24h) : last} in the last 24 h${typeof all === 'number' && !combined ? '; agent-bridge only' : ''}</div>`;
-  return typeof all === 'number' ? `<div class="stat num">${count(all + (combined ? fleet.prsMergedTotal : 0))}</div>${detail}${combined ? stamp(fleet) : ''}`
+  const sources = stamp({ generatedAt: publicGeneratedAt }, 'agent-bridge ') + (combined ? stamp(fleet, 'slipgates-fleet ') : '');
+  return typeof all === 'number' ? `<div class="stat num">${count(all + (combined ? fleet.prsMergedTotal : 0))}</div>${detail}${sources}`
     : detail + '<div class="none">Data unavailable</div>';
 }
 

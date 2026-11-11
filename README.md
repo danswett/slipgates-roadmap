@@ -61,7 +61,9 @@ or referrers, disallows redirects, and enforces 10 seconds and 64 KB per respons
 The same schema validators run in Node and the browser. Valid counts older than
 15 minutes keep their producer time with Stale; invalid, blocked or timed-out
 reads show Unavailable, never a last good value as fresh. Fleet totals in the
-merged tile use the same validated view-time response. No periodic fetch runs.
+merged tile use the same validated view-time response. Its public and fleet
+components have separately labeled source times and Stale badges, so a fresh
+fleet read cannot make old public HTML look current. No periodic fetch runs.
 The CSP permits only same-origin scripts and connects only to
 https://raw.githubusercontent.com/danswett/slipgates-roadmap/fleet-counts/.
 Freshness is checked every second and on page/visibility resume; returning from

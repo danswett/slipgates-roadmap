@@ -47,7 +47,7 @@ const epics = reason ? [] : value.epics.filter((e) => !e.repository || e.reposit
 const done = epics.reduce((n, e) => n + e.closed, 0), total = epics.reduce((n, e) => n + e.closed + e.open, 0);
 const tile = (title, body) => `<div class="card"><h2>${title}</h2>${body}</div>`;
 const number = (n) => { const result = count(n); return `<div class="${typeof result === 'number' ? 'stat num' : 'none'}">${result}</div>`; };
-const mergedTile = () => `<div data-live-merged data-total="${count(stats?.prsMergedTotal)}" data-recent="${count(stats?.merges?.last_24_hours)}">${renderMergedCounts(stats?.prsMergedTotal, stats?.merges?.last_24_hours, fleetCounts)}</div>`;
+const mergedTile = () => `<div data-live-merged data-total="${count(stats?.prsMergedTotal)}" data-recent="${count(stats?.merges?.last_24_hours)}" data-generated-at="${escape(timestamp)}">${renderMergedCounts(stats?.prsMergedTotal, stats?.merges?.last_24_hours, fleetCounts, timestamp)}</div>`;
 const peopleTile = () => `<div data-live-counts="people">${renderPeopleCounts(readPeopleCounts(people))}</div>`;
 const time = `<time datetime="${escape(timestamp)}">${escape(updated)}</time>`, stale = Date.now() - Date.parse(timestamp) > 15 * 60000;
 const stamp = `<span class="stamp${reason ? ' stale' : ''}">${reason ? warn : clock}<span>${stale ? 'Out of date. Last update ' : reason ? 'Data unavailable. ' : 'Updated '}${time}</span></span>`;

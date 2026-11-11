@@ -26,7 +26,8 @@ export async function refreshLiveCounts(root, request = globalThis.fetch) {
   const controllers = []; active.set(root, controllers);
   const merged = root.querySelector('[data-live-merged]');
   const total = Number(merged?.dataset.total), recent = Number(merged?.dataset.recent);
-  if (merged) merged.innerHTML = renderMergedCounts(total, recent);
+  const publicGeneratedAt = merged?.dataset.generatedAt;
+  if (merged) merged.innerHTML = renderMergedCounts(total, recent, undefined, publicGeneratedAt);
   await Promise.all([
     ['people', 'people-at-work.json', validatePeopleCounts, renderPeopleCounts],
     ['fleet', 'fleet-counts.json', validateFleetCounts, renderFleetCounts],
@@ -44,7 +45,7 @@ export async function refreshLiveCounts(root, request = globalThis.fetch) {
       if (active.get(root) !== controllers) return;
       if (!value) throw new Error('Public counts invalid');
       target.innerHTML = render(value);
-      if (kind === 'fleet' && merged) merged.innerHTML = renderMergedCounts(total, recent, value);
+      if (kind === 'fleet' && merged) merged.innerHTML = renderMergedCounts(total, recent, value, publicGeneratedAt);
       target.dataset.liveState = 'ready';
     } catch {
       if (active.get(root) !== controllers) return;
