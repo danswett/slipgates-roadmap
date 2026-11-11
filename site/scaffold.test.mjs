@@ -128,6 +128,6 @@ test('partial tiles use one muted unavailable note and preserve the real merge c
     assert.equal(people?.match(/Data unavailable/g)?.length, 1);
     assert.doesNotMatch(people, /Data unavailable (?:builders|reviewers)/);
     assert.match(html, /17 in the last 24 h<\/div><div class="none">Data unavailable/);
-    assert.match(html, /<footer>.*private slipgates-fleet epics.*No cookies, no trackers, no outside requests\./s);
+    assert.match(html, /<footer>.*private slipgates-fleet epics.*No cookies or trackers\. Counts read from public GitHub\./s);
   } finally { rmSync(dir, { recursive: true }); }
 });

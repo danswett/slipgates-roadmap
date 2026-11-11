@@ -46,7 +46,7 @@ test('invalid, blocked and oversized data cannot retain a last good value or lea
   }
   const root = page();
   await refreshLiveCounts(root, async () => { throw new Error(marker); });
-  for (const target of Object.values(root.targets)) assert.match(target.innerHTML, /Unavailable/);
+  for (const target of Object.values(root.targets)) assert.match(target.innerHTML, /unavailable/i);
   assert.ok(!logs.join('').includes(marker));
   await refreshLiveCounts(root, async (url) => new Response(url.endsWith('people-at-work.json') ? valid.padEnd(65536, ' ') : JSON.stringify(fleet())));
   assert.match(root.targets.people.innerHTML, />7<\/div>/, 'the 64 KB boundary is inclusive');
@@ -63,5 +63,15 @@ test('ten-second deadlines abort both reads and leave unavailable rather than a 
   for (const target of Object.values(root.targets)) assert.doesNotMatch(target.innerHTML, /LAST_GOOD_VALUE/);
   t.mock.timers.tick(10000); await pending;
   assert.equal(signals.length, 2); assert.ok(signals.every((signal) => signal.aborted));
-  for (const target of Object.values(root.targets)) assert.match(target.innerHTML, /Unavailable/);
+  for (const target of Object.values(root.targets)) assert.match(target.innerHTML, /unavailable/i);
+});
+
+test('a late response from before page resume cannot replace the newer unavailable result', async (t) => {
+  t.mock.method(console, 'error', () => {});
+  const root = page(), replies = [];
+  const old = refreshLiveCounts(root, (url) => new Promise(resolve => replies.push(() => resolve(
+    new Response(JSON.stringify(url.endsWith('people-at-work.json') ? people() : fleet()))))));
+  await refreshLiveCounts(root, async () => { throw new Error('blocked'); });
+  replies.forEach(reply => reply()); await old;
+  for (const target of Object.values(root.targets)) assert.match(target.innerHTML, /unavailable/i);
 });

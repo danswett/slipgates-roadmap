@@ -56,11 +56,16 @@ People counts come only from public `people-at-work.json` on `fleet-counts`,
 fetched without credentials. Exactly `schema: 1`, UTC `generatedAt`, and integer
 `builders`/`reviewers` from 0 to 1000 are accepted. Missing/invalid files, extra
 keys, times over one minute ahead or over 15 minutes old show Data unavailable.
-For counts that were fresh when built, the browser keeps the producer's generated-at
-time and adds a visible Stale badge once their age exceeds 15 minutes. A same-origin
-module checks on load, every second, and on page/visibility resume; it makes no
-network requests and changes neither counts nor timestamps. The CSP allows only
-same-origin scripts, not inline scripts. Build-time validation is unchanged.
+At view time the browser fetches both fixed public raw files without credentials
+or referrers, disallows redirects, and enforces 10 seconds and 64 KB per response.
+The same schema validators run in Node and the browser. Valid counts older than
+15 minutes keep their producer time with Stale; invalid, blocked or timed-out
+reads show Unavailable, never a last good value as fresh. Fleet totals in the
+merged tile use the same validated view-time response. No periodic fetch runs.
+The CSP permits only same-origin scripts and connects only to
+https://raw.githubusercontent.com/danswett/slipgates-roadmap/fleet-counts/.
+Freshness is checked every second and on page/visibility resume; returning from
+the back-forward cache also rereads the public files. Build validation is unchanged.
 Without JavaScript or if the module fails to load, the last built counts retain
 their producer Updated at time and a permanently visible Stale badge.
 The private producer counts working SG Builder/Worker and SG Reviewer sessions,
