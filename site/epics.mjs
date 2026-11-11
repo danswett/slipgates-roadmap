@@ -15,7 +15,7 @@ export function renderEpics(epics, escape) {
     const status = blocked
       ? `<span class="chip blocked">${warning}<span>Blocked: ${e.blockers.map((n) =>
         `<a href="${issue(n)}">#${n}</a>`).join(', ')}</span></span>`
-      : total > 0 && e.open === 0 ? `<span class="chip done">${check}Done</span>` : '';
+      : (total > 0 && e.open === 0) || e.state === 'CLOSED' ? `<span class="chip done">${check}Done</span>` : '';
     return `<li class="card epic${blocked ? ' is-blocked' : ''}"><h3><a href="${issue(e.number)}"><span class="id mono">#${e.number}</span> ${escape(e.title)}</a></h3><span class="pct num">${percent}%</span>` +
       `<div class="bar sm" role="progressbar" aria-label="${escape(e.title)}" aria-valuemin="0" aria-valuemax="${Math.max(total, 1)}" aria-valuenow="${e.closed}" aria-valuetext="${e.closed} of ${total} slices done"><i style="--p:${percent}%"></i></div>` +
       `<div class="meta"><span class="num">${e.closed} of ${total} done; ${e.open} open</span><span class="num">${e.open_prs} open PRs</span><span class="num">${e.merged_last_24h} merged in 24 h</span>${status}</div></li>`;
