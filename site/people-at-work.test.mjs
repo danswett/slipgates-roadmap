@@ -69,3 +69,12 @@ test('the public people fetch has no credential or private endpoint', () => {
   assert.match(fetch, /--max-time 15 --max-filesize 4096/);
   assert.match(fetch, /https:\/\/raw\.githubusercontent\.com\/danswett\/slipgates-roadmap\/fleet-counts\/people-at-work\.json/);
 });
+
+test('without scripts the built counts keep their generated time and a visible Stale badge', () => {
+  const value = sample(Date.now() - 60000), { html } = render(value);
+  const badge = html.match(/<span\b[^>]*data-people-stale[^>]*>Stale<\/span>/)?.[0];
+  assert.ok(badge);
+  assert.doesNotMatch(badge, /\bhidden\b/);
+  assert.ok(html.includes(`datetime="${value.generatedAt}"`));
+  assert.match(html, /Updated at <time data-people-generated-at/);
+});
