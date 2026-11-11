@@ -114,6 +114,8 @@ class BlockerTests(unittest.TestCase):
         self.child["blockedBy"]["nodes"] = [relation]
         self.assertEqual([dict(number=55, title="Roster", reason="Roster", clearsIt="Quality")],
                          self.generate()["epics"][0]["blockerDetails"])
+        self.child["body"] = "Blocked by #55: waiting on roster\nClears it: Quality"
+        self.assertEqual("waiting on roster", self.generate()["epics"][0]["blockerDetails"][0]["reason"])
         relation.update(title="PRIVATE title", repository={"nameWithOwner": "danswett/slipgates-fleet"})
         data, body = repo.generate(self.snapshot)
         self.assertNotIn("PRIVATE", json.dumps(data) + body)
@@ -143,6 +145,12 @@ class BlockerTests(unittest.TestCase):
     def test_partial_blocker_relations_fail_visibly(self):
         self.child["blockedBy"]["pageInfo"]["hasNextPage"] = True
         with self.assertRaisesRegex(ValueError, "Incomplete blocker relations"):
+            self.generate()
+
+    def test_private_sub_issue_cannot_publish_its_title_or_body(self):
+        self.child.update(title="PRIVATE child", body="Blocked by #55: PRIVATE reason",
+                          repository={"nameWithOwner": "danswett/slipgates-fleet"})
+        with self.assertRaisesRegex(ValueError, "Non-public sub-issues are not supported"):
             self.generate()
 
     def test_read_fetches_bodies_relations_and_only_public_fallback_titles(self):
