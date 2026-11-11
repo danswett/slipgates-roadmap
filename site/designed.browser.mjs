@@ -10,8 +10,9 @@ test('designed roadmap renders on phone and desktop without outside requests', {
   const dir = mkdtempSync(join(tmpdir(), 'roadmap-design-')), out = join(dir, 'out');
   const data = join(dir, 'data.json'), requests = [], failures = [], pending = new Map();
   const value = { updatedAt: new Date().toISOString(), totals: { prsMerged: 100 }, people: { builders: 3, reviewers: 2 },
-    epics: [{ number: 2, title: 'Finished', closed: 3, open: 0 }, { number: 1, title: 'Blocked', closed: 1, open: 2, blockers: [7] },
-      { number: 3, title: 'No slices yet', closed: 0, open: 0 }],
+    epics: [{ number: 2, title: 'Finished', closed: 3, open: 0, priority_order: 1, open_prs: 0, merged_last_24h: 4, blockers: [] },
+      { number: 1, title: 'Blocked', closed: 1, open: 2, priority_order: 2, open_prs: 2, merged_last_24h: 1, blockers: [7] },
+      { number: 3, title: 'No slices yet', closed: 0, open: 0, priority_order: 3, open_prs: 0, merged_last_24h: 0, blockers: [] }],
     stats: { 'danswett/agent-bridge': { commits: { total: 456 }, issues: { counts: { total: 123, resolved: 90 } },
       merges: { last_24_hours: 17 } } } };
   const server = createServer((req, res) => {
@@ -49,7 +50,7 @@ test('designed roadmap renders on phone and desktop without outside requests', {
       await evaluate("new Promise(r => { const ready = async () => { await document.fonts.ready; r(true); }; document.readyState === 'complete' ? ready() : addEventListener('load', ready, {once:true}); })");
       const view = await evaluate(`({ title: document.querySelector('h1')?.textContent, header: document.querySelector('.lockup')?.textContent, tiles: document.querySelectorAll('.tiles .card').length, epics: [...document.querySelectorAll('.epic')].map(e => ({ id: e.querySelector('a')?.textContent, bar: e.querySelector('[role=progressbar]')?.getAttribute('aria-valuetext'), chip: e.querySelector('.chip')?.textContent })), overflow: document.documentElement.scrollWidth > innerWidth, fonts: [...document.fonts].filter(f => f.status === 'loaded').map(f => f.family), targets: [...document.querySelectorAll('a')].every(a => a.getBoundingClientRect().height >= 44), motion: [...document.querySelectorAll('.bar i')].every(e => getComputedStyle(e).animationName === 'none'), text: document.body.textContent })`);
       assert.match(view.header, /Slipgates.*Roadmap/); assert.equal(view.overflow, false); assert.equal(view.targets, true);
-      assert.ok(view.fonts.includes('Slipgates Sans')); assert.equal(view.motion, true); assert.match(view.text, /The private slipgates-fleet repository is not included/);
+      assert.ok(view.fonts.includes('Slipgates Sans')); assert.equal(view.motion, true); assert.match(view.text, /slipgates-fleet \(private repo, counts only\)/);
       if (state === 'fresh' || state === 'partial') {
         assert.equal(view.title, 'Where Slipgates stands'); assert.equal(view.tiles, 4); assert.equal(view.epics.length, 3);
         assert.match(view.epics[0].id, /#2.*Finished/); assert.equal(view.epics[0].bar, '3 of 3 slices done'); assert.match(view.epics[0].chip, /Done/);

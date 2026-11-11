@@ -23,6 +23,8 @@ Bins are completed UTC hours/days, oldest first. A missing, invalid, future-date
 over one minute or over-two-hour-old file shows Fleet counts unavailable only in
 that panel. No private text or rejected payload is rendered or logged.
 The branded header, hero, totals and epic cards follow the approved #1897 design.
+Epic cards show child progress, open children, blockers, open PRs and 24-hour merges,
+in the generator's #696-then-priority order. Invalid epic details show Data unavailable.
 Missing all-time merged-PR and live people counts remain explicitly unavailable;
 30-day authors and review families are not presented as people at work.
 Tokens and self-hosted fonts are the approved agent-bridge brand assets (OFL in
