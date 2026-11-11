@@ -22,7 +22,7 @@ test('designed roadmap renders on phone and desktop without outside requests', {
       ci: { median_minutes: 6.8 } } } };
   const server = createServer((req, res) => {
     const path = new URL(req.url, 'http://localhost').pathname;
-    try { res.setHeader('Content-Type', path.endsWith('.css') ? 'text/css' : path.endsWith('.woff2') ? 'font/woff2' : 'text/html'); res.end(readFileSync(join(out, path === '/' ? 'index.html' : path.slice(1)))); }
+    try { res.setHeader('Content-Type', path.endsWith('.mjs') ? 'text/javascript' : path.endsWith('.css') ? 'text/css' : path.endsWith('.woff2') ? 'font/woff2' : 'text/html'); res.end(readFileSync(join(out, path === '/' ? 'index.html' : path.slice(1)))); }
     catch (error) { if (error.code !== 'ENOENT') throw error; res.writeHead(404).end(); }
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -88,6 +88,24 @@ test('designed roadmap renders on phone and desktop without outside requests', {
         if (state === 'fresh') {
           assert.deepEqual(await evaluate("[...document.querySelectorAll('.people .stat')].map(e => e.textContent)"), ['3', '2']);
           assert.ok(await evaluate("document.querySelector('.people + .sub time')?.dateTime"));
+          const producerAt = Date.parse(value.updatedAt);
+          const badge = () => evaluate("({ hidden: document.querySelector('[data-people-stale]')?.hidden, text: document.querySelector('[data-people-stale]')?.textContent, display: document.querySelector('[data-people-stale]') && getComputedStyle(document.querySelector('[data-people-stale]')).display, at: document.querySelector('[data-people-generated-at]')?.dateTime })");
+          assert.equal((await badge()).hidden, true, 'fresh counts have no stale badge');
+          await evaluate(`Date.now = () => ${producerAt + 900000}; dispatchEvent(new Event('pageshow'))`);
+          assert.equal((await badge()).hidden, true, 'exactly fifteen minutes is fresh');
+          await evaluate(`Date.now = () => ${producerAt + 900001}; new Promise(r => setTimeout(r, 1200))`);
+          assert.deepEqual(await badge(), { hidden: false, text: 'Stale', display: 'inline-block', at: value.updatedAt },
+            'an open page ages without a deployment or reload');
+          await evaluate(`Date.now = () => ${producerAt}; document.dispatchEvent(new Event('visibilitychange'))`);
+          assert.equal((await badge()).hidden, true);
+          const injected = await send('Page.addScriptToEvaluateOnNewDocument', { source: `Date.now = () => ${producerAt + 7200000}` });
+          await send('Page.navigate', { url: `${origin}/?${width}-old-deployment` });
+          await evaluate("new Promise(r => document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true }))");
+          assert.equal((await badge()).hidden, false, 'an already old deployment is marked on load');
+          assert.equal((await badge()).at, value.updatedAt);
+          assert.deepEqual(await evaluate("[...document.querySelectorAll('.people .stat')].map(e => e.textContent)"), ['3', '2']);
+          assert.equal(await evaluate("document.documentElement.scrollWidth > innerWidth"), false);
+          await send('Page.removeScriptToEvaluateOnNewDocument', { identifier: injected.identifier });
           await evaluate("document.querySelectorAll('.charts details').forEach(e => e.open = true)");
           assert.equal(await evaluate("document.documentElement.scrollWidth > innerWidth"), false);
           assert.equal(await evaluate("[...document.querySelectorAll('.charts summary')].every(e => e.getBoundingClientRect().height >= 44)"), true);
