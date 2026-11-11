@@ -7,6 +7,13 @@ import { spawnSync } from 'node:child_process';
 
 const workflow = () => readFileSync('.github/workflows/pages.yml', 'utf8').replaceAll('\r\n', '\n');
 const job = (name) => workflow().split(`  ${name}:\n`)[1]?.split(/\n  \w+:\n/)[0] ?? '';
+const assertLocalFreshnessScript = (html) => {
+  assert.deepEqual([...html.matchAll(/<script\b[^>]*>[\s\S]*?<\/script>/gi)].map(([script]) => script),
+    ['<script type="module" src="people-freshness.mjs"></script>']);
+  assert.equal(html.match(/http-equiv="Content-Security-Policy" content="([^"]+)"/)?.[1],
+    "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; base-uri 'none'; form-action 'none'");
+  assert.doesNotMatch(html, /<(?:link|img|iframe)\b[^>]*\b(?:src|href)=["'](?:https?:)?\/\//i);
+};
 
 test('data failure cannot skip the token-free build or main-only serialized deploy', () => {
   assert.match(workflow(), /permissions: \{\}/);
@@ -67,7 +74,8 @@ test('fresh D1/D4 data renders agent-bridge only, its update time and safe total
       const run = spawnSync(process.execPath, ['site/build.mjs', data, out], { encoding: 'utf8' });
       assert.equal(run.status, 0, run.stderr);
       const html = readFileSync(join(out, 'index.html'), 'utf8');
-      assert.doesNotMatch(html, /<script\b|<(?:link|img|iframe)\b[^>]*\b(?:src|href)=["'](?:https?:)?\/\//i);
+      assertLocalFreshnessScript(html);
+      assert.ok(existsSync(join(out, 'people-freshness.mjs')));
       if (Object.keys(change).length && change.stats !== privateStats) {
         assert.match(html, /Data unavailable/);
         assert.match(run.stderr, /Data unavailable/);
@@ -98,7 +106,8 @@ test('missing or malformed data yields plain unavailable copy and keeps diagnost
       assert.match(html, /Data unavailable/);
       assert.match(html, /datetime="[^"]+">.* PT/);
       assert.match(html, /Content-Security-Policy/);
-      assert.doesNotMatch(html, /<script\b|<(?:link|img|iframe)\b[^>]*\b(?:src|href)=["'](?:https?:)?\/\/|http-equiv="refresh"/i);
+      assertLocalFreshnessScript(html);
+      assert.doesNotMatch(html, /http-equiv="refresh"/i);
       assert.match(run.stderr, /Data unavailable/);
       assert.doesNotMatch(html, /Data unavailable:|&lt;script&gt;bad|valid update time|Data artifact/);
       if (input?.includes('bad')) assert.match(run.stderr, /<script>bad<\/script>/);

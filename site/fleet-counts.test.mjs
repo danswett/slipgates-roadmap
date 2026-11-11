@@ -41,7 +41,8 @@ test('only validated fleet counts render, independently of agent-bridge data', (
     }
     assert.doesNotMatch(html, /Average per hour/);
     assert.ok(html.includes(`datetime="${counts.generatedAt}"`));
-    assert.doesNotMatch(html, /Fleet counts unavailable|<script\b|<(?:link|img|iframe)\b[^>]*\b(?:src|href)=["'](?:https?:)?\/\//i);
+    assert.doesNotMatch(html.replace('<script type="module" src="people-freshness.mjs"></script>', ''),
+      /Fleet counts unavailable|<script\b|<(?:link|img|iframe)\b[^>]*\b(?:src|href)=["'](?:https?:)?\/\//i);
     if (roadmap) assert.match(html, /90(?:<[^>]+>|\s)*of 123/);
   }
   const { html } = render({ ...counts, issuesOpen: 0, commits: 100000000,

@@ -65,13 +65,13 @@ ${tile('Issues resolved', `<div class="stat num">${count(issues?.resolved)}<smal
 ${tile('People at work', peopleTile())}</div>${renderCharts(stats)}
 <section class="grid" aria-labelledby="h-ep"><h2 id="h-ep">Epics</h2><ul class="epics">${renderEpics(epics, escape)}</ul></section>${renderNeedsBlocker(epics, escape)}`;
 mkdirSync(out, { recursive: true });
-for (const asset of ['tokens.css', 'style.css', 'blockers.css', 'fonts']) cpSync(fileURLToPath(new URL(asset, import.meta.url)), join(out, asset), { recursive: true });
+for (const asset of ['tokens.css', 'style.css', 'blockers.css', 'fonts', 'people-freshness.mjs']) cpSync(fileURLToPath(new URL(asset, import.meta.url)), join(out, asset), { recursive: true });
 writeFileSync(join(out, 'CNAME'), 'roadmap.slipgates.com\n');
 writeFileSync(join(out, 'index.html'), `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; base-uri 'none'; form-action 'none'">
 <title>Slipgates roadmap</title><meta name="color-scheme" content="light dark"><link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="blockers.css">
 </head><body><div class="wrap"><header class="top"><a class="lockup" href="./">${mark}<span>Slipgates</span><span class="sep" aria-hidden="true">/</span><span>Roadmap</span></a>${stamp}</header><main>
 ${content}${renderFleetCounts(fleetCounts)}
-</main><footer><span>Public data from github.com/danswett/agent-bridge; private slipgates-fleet epics are not included.</span><span>No cookies, no trackers, no outside requests.</span></footer></div></body></html>
+</main><footer><span>Public data from github.com/danswett/agent-bridge; private slipgates-fleet epics are not included.</span><span>No cookies, no trackers, no outside requests.</span></footer></div><script type="module" src="people-freshness.mjs"></script></body></html>
 `);
