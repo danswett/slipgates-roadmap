@@ -1,5 +1,3 @@
-# Dashboard statistics
-
 `stats.collect(run)` reads confirmed-public repos only, with one shared 60-request cap.
 Missing, private or incomplete sources omit fields with `Data unavailable`; they never become zeros.
 Daily buckets use Pacific dates; 48 hourly buckets include this hour, with explicit DST offsets.

@@ -29,6 +29,15 @@ def fixture():
 
 
 class ThroughputTests(unittest.TestCase):
+    def test_generator_preserves_epics_and_adds_statistics_to_both_outputs(self):
+        import repo_dashboard
+        snapshot = {"epics": [], "priority_body": "", "stats": {"danswett/agent-bridge": summarize(fixture(), NOW)}}
+        data, body = repo_dashboard.generate(snapshot, NOW)
+        self.assertEqual(set(data), {"epics", "stats"})
+        self.assertEqual(data["stats"], snapshot["stats"])
+        self.assertEqual(data["epics"], [])
+        self.assertIn("1234", body)
+
     def test_fixture_counts_series_and_percentiles(self):
         data = summarize(fixture(), NOW)
         self.assertEqual(data["issues"]["counts"], {"total": 10, "open": 4, "resolved": 6})
