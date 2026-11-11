@@ -1,7 +1,7 @@
 import { readFileSync, mkdirSync, writeFileSync, cpSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { renderFleetCounts } from './fleet-counts.mjs';
+import { readFleetCounts, renderFleetCounts } from './fleet-counts.mjs';
 import { renderEpics, renderNeedsBlocker, validEpicDetails } from './epics.mjs';
 import { renderCharts } from './charts.mjs';
 
@@ -34,6 +34,7 @@ const count = (n) => {
   return 'Data unavailable';
 };
 const stats = value?.stats?.['danswett/agent-bridge'], issues = stats?.issues?.counts;
+const fleetCounts = readFleetCounts(fleet);
 const glyph = (body) => `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
 const warn = glyph('<path d="M10 3l7.5 13h-15zM10 8.5v3.5M10 14.5v.01"/>');
 const clock = glyph('<circle cx="10" cy="10" r="7"/><path d="M10 6v4l2.5 2.5"/>');
@@ -45,8 +46,10 @@ const done = epics.reduce((n, e) => n + e.closed, 0), total = epics.reduce((n, e
 const tile = (title, body) => `<div class="card"><h2>${title}</h2>${body}</div>`;
 const number = (n) => { const result = count(n); return `<div class="${typeof result === 'number' ? 'stat num' : 'none'}">${result}</div>`; };
 const mergedTile = () => {
-  const all = count(value.totals?.prsMerged), recent = `<div class="sub">${count(stats?.merges?.last_24_hours)} in the last 24 h</div>`;
-  return typeof all === 'number' ? number(all) + recent : recent + '<div class="none">Data unavailable</div>';
+  const all = count(stats?.prsMergedTotal), combined = typeof all === 'number' && fleetCounts?.prsMergedTotal !== undefined;
+  const recent = count(stats?.merges?.last_24_hours);
+  const detail = `<div class="sub">${typeof recent === 'number' && combined ? count(recent + fleetCounts.prsMerged24h) : recent} in the last 24 h${typeof all === 'number' && !combined ? '; agent-bridge only' : ''}</div>`;
+  return typeof all === 'number' ? number(all + (combined ? fleetCounts.prsMergedTotal : 0)) + detail : detail + '<div class="none">Data unavailable</div>';
 };
 const peopleTile = () => {
   const roles = ['builders', 'reviewers'].map((role) => [role, count(value.people?.[role])]);
@@ -73,6 +76,6 @@ writeFileSync(join(out, 'index.html'), `<!doctype html>
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; base-uri 'none'; form-action 'none'">
 <title>Slipgates roadmap</title><meta name="color-scheme" content="light dark"><link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="blockers.css">
 </head><body><div class="wrap"><header class="top"><a class="lockup" href="./">${mark}<span>Slipgates</span><span class="sep" aria-hidden="true">/</span><span>Roadmap</span></a>${stamp}</header><main>
-${content}${renderFleetCounts(fleet)}
+${content}${renderFleetCounts(fleetCounts)}
 </main><footer><span>Public data from github.com/danswett/agent-bridge; private slipgates-fleet epics are not included.</span><span>No cookies, no trackers, no outside requests.</span></footer></div></body></html>
 `);

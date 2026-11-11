@@ -37,16 +37,20 @@ statistics are explicitly unavailable, never zero. No write to #755 is made.
 Fleet contributes only `fleet-counts.json` from this public repo's `fleet-counts`
 branch, fetched without credentials. A separate private producer owns publication;
 the public build never reads private content or holds its publication credential.
-The exact 45-key schema is `schema: 1`, UTC `generatedAt`, `issuesOpen`,
+The required 45-key schema is `schema: 1`, UTC `generatedAt`, `issuesOpen`,
 `issuesResolved`, `commits`, `prsMerged24h`, `prsMerged14d`, `mergeHour00`-`23`
 and `mergeDay00`-`13`. Counts are integers 0-100000000; totals must sum their bins.
+An optional `prsMergedTotal` uses the same integer bounds. The merged-PR tile sums
+it with agent-bridge's public `stats` field `prsMergedTotal` (GitHub's all-time
+merged-only count), including both 24-hour counts. Without the fleet total it
+explicitly says agent-bridge only; without the public total it says Data unavailable.
 Bins are completed UTC hours/days, oldest first. A missing, invalid, future-dated
 over one minute or over-two-hour-old file shows Fleet counts unavailable only in
 that panel. No private text or rejected payload is rendered or logged.
 The branded header, hero, totals and epic cards follow the approved #1897 design.
 Epic cards show child progress, open children, blockers, open PRs and 24-hour merges,
 in the generator's #696-then-priority order. Invalid epic details show Data unavailable.
-Missing all-time merged-PR and live people counts remain explicitly unavailable;
+Missing live people counts remain explicitly unavailable;
 30-day authors and review families are not presented as people at work.
 Tokens and self-hosted fonts are the approved agent-bridge brand assets (OFL in
 `site/fonts`); the stylesheet follows the Creative board.
