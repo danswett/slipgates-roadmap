@@ -29,8 +29,13 @@ jobs:
           node --test
       - name: Python tests
         run: |
-          if [ -z "$(find tools -name 'test*.py' -print -quit 2>/dev/null)" ]; then
+          dirs=$(find tools -name 'test*.py' -printf '%h\n' 2>/dev/null | sort -u)
+          if [ -z "$dirs" ]; then
             echo "No Python test files yet."
             exit 0
           fi
-          python3 -m unittest discover -s tools -v
+          status=0
+          for d in $dirs; do
+            python3 -m unittest discover -s "$d" -v || status=1
+          done
+          exit $status
