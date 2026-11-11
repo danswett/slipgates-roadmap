@@ -20,10 +20,22 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Unit tests
+      - name: Node tests
         run: |
           if [ -z "$(find . -path ./node_modules -prune -o \( -name '*.test.mjs' -o -name '*.test.js' \) -print -quit)" ]; then
-            echo "No test files yet."
+            echo "No Node test files yet."
             exit 0
           fi
           node --test
+      - name: Python tests
+        run: |
+          found=0
+          status=0
+          while IFS= read -r -d '' d; do
+            found=1
+            python3 -m unittest discover -s "$d" -v || status=1
+          done < <(find tools -name 'test*.py' -printf '%h\0' 2>/dev/null | sort -zu)
+          if [ "$found" = 0 ]; then
+            echo "No Python test files yet."
+          fi
+          exit $status
