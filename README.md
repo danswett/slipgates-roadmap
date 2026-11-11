@@ -47,8 +47,11 @@ Missing all-time merged-PR and live people counts remain explicitly unavailable;
 30-day authors and review families are not presented as people at work.
 Tokens and self-hosted fonts are the approved agent-bridge brand assets (OFL in
 `site/fonts`); the D6a stylesheet is the chart-free subset of the Creative board.
-Run `node --test --test-concurrency=1 site/designed.browser.mjs` for 390/1180px
+Run `node --test --test-concurrency=1 site/designed.browser.mjs` for 390/820/1180/1376px
 rendered checks with installed Edge, or set `ROADMAP_BROWSER` to a Chromium binary.
 `ROADMAP_SCREENSHOTS` saves the checked states; no browser-test dependency is needed.
+Empty epics say No slices planned without a percentage or bar. Missing people
+counts share one muted note; diagnostics stay in stderr, not the unavailable page.
+The footer distinguishes excluded private epics from the public fleet counts.
 Cron refreshes every five minutes, best effort; the page shows its Pacific update time.
 SRE manages the custom domain. Validate with `pwsh -File quality/run.ps1` (Node, Python and actionlint).

@@ -42,22 +42,27 @@ test('designed roadmap renders on phone and desktop without outside requests', {
     const evaluate = async (expression) => { const result = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }); assert.equal(result.exceptionDetails, undefined, JSON.stringify(result)); return result.result.value; };
     await send('Network.enable'); await send('Page.enable');
     await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }, { name: 'prefers-reduced-motion', value: 'reduce' }] });
-    for (const width of [390, 1180]) for (const state of ['fresh', 'partial', 'missing', 'stale']) {
+    for (const width of [390, 820, 1180, 1376]) for (const state of ['fresh', 'partial', 'missing', 'stale']) {
       writeFileSync(data, JSON.stringify(state === 'missing' ? { error: 'Repository read failed' } : { ...value, ...(state === 'partial' ? { people: undefined, totals: undefined } : {}), ...(state === 'stale' ? { updatedAt: new Date(Date.now() - 3600000).toISOString() } : {}) }));
       const build = spawnSync(process.execPath, ['site/build.mjs', data, out], { encoding: 'utf8' }); assert.equal(build.status, 0, build.stderr);
       await send('Emulation.setDeviceMetricsOverride', { width, height: 1000, deviceScaleFactor: 1, mobile: false });
       await send('Page.navigate', { url: `${origin}/?${width}-${state}` });
       await evaluate("new Promise(r => { const ready = async () => { await document.fonts.ready; r(true); }; document.readyState === 'complete' ? ready() : addEventListener('load', ready, {once:true}); })");
       const view = await evaluate(`({ title: document.querySelector('h1')?.textContent, header: document.querySelector('.lockup')?.textContent, tiles: document.querySelectorAll('.tiles .card').length, epics: [...document.querySelectorAll('.epic')].map(e => ({ id: e.querySelector('a')?.textContent, bar: e.querySelector('[role=progressbar]')?.getAttribute('aria-valuetext'), chip: e.querySelector('.chip')?.textContent })), overflow: document.documentElement.scrollWidth > innerWidth, fonts: [...document.fonts].filter(f => f.status === 'loaded').map(f => f.family), targets: [...document.querySelectorAll('a')].every(a => a.getBoundingClientRect().height >= 44), motion: [...document.querySelectorAll('.bar i')].every(e => getComputedStyle(e).animationName === 'none'), text: document.body.textContent })`);
+      const style = await evaluate(`({ repeat: getComputedStyle(document.body).backgroundRepeat, height: document.body.getBoundingClientRect().height, footer: document.querySelector('footer') && { size: getComputedStyle(document.querySelector('footer')).fontSize, color: getComputedStyle(document.querySelector('footer')).color, text3: getComputedStyle(document.body).getPropertyValue('--ab-text3').trim(), border: getComputedStyle(document.querySelector('footer')).borderTopStyle }, columns: document.querySelector('.tiles') && getComputedStyle(document.querySelector('.tiles')).gridTemplateColumns.split(' ').length })`);
+      assert.equal(style.repeat, 'no-repeat'); assert.ok(style.height >= 1000); assert.equal(style.footer?.size, '13px'); assert.equal(style.footer.border, 'solid');
+      assert.equal(await evaluate("getComputedStyle(document.querySelector('footer')).color === getComputedStyle(document.querySelector('.epic .id') ?? document.querySelector('footer')).color"), true);
+      assert.doesNotMatch(view.text, /Data unavailable:|Data artifact/);
       assert.match(view.header, /Slipgates.*Roadmap/); assert.equal(view.overflow, false); assert.equal(view.targets, true);
       assert.ok(view.fonts.includes('Slipgates Sans')); assert.equal(view.motion, true); assert.match(view.text, /slipgates-fleet \(private repo, counts only\)/);
       if (state === 'fresh' || state === 'partial') {
         assert.equal(view.title, 'Where Slipgates stands'); assert.equal(view.tiles, 4); assert.equal(view.epics.length, 3);
         assert.match(view.epics[0].id, /#2.*Finished/); assert.equal(view.epics[0].bar, '3 of 3 slices done'); assert.match(view.epics[0].chip, /Done/);
-        assert.match(view.epics[1].chip, /Blocked/); assert.equal(view.epics[2].bar, '0 of 0 slices done'); assert.equal(view.epics[2].chip, undefined);
+        assert.match(view.epics[1].chip, /Blocked/); assert.equal(view.epics[2].bar, undefined); assert.equal(view.epics[2].chip, undefined);
+        assert.equal(style.columns, width < 900 ? 2 : 4); assert.match(view.text, /No slices planned/);
         assert.match(view.text, /4 of 6 planned slices done across 3 epics/); assert.ok(view.fonts.includes('Slipgates Mono'));
-        if (state === 'partial') assert.equal(await evaluate("[...document.querySelectorAll('.tiles .card')].filter(e => /Pull requests merged|People at work/.test(e.textContent)).every(e => e.textContent.includes('Data unavailable'))"), true);
-      } else { assert.equal(view.title, 'Data unavailable'); if (state === 'stale') assert.match(view.text, /Out of date\. Last update/); }
+        if (state === 'partial') assert.equal(await evaluate("[...document.querySelectorAll('.tiles .card')].filter(e => /Pull requests merged|People at work/.test(e.textContent)).every(e => e.textContent.match(/Data unavailable/g)?.length === 1 && getComputedStyle(e.querySelector('.none')).fontSize === '16px' && !e.querySelector('.stat'))"), true);
+      } else { assert.equal(view.title, 'Data unavailable'); if (state === 'stale') { assert.match(view.text, /Out of date\. Last update/); assert.match(view.text, /The last good update was at .* PT/); } }
       if (process.env.ROADMAP_SCREENSHOTS) { mkdirSync(process.env.ROADMAP_SCREENSHOTS, { recursive: true }); writeFileSync(join(process.env.ROADMAP_SCREENSHOTS, `${width}-${state}.png`), Buffer.from((await send('Page.captureScreenshot', { captureBeyondViewport: true })).data, 'base64')); }
     }
     assert.ok(requests.some(url => url.endsWith('.woff2'))); assert.ok(requests.every(url => new URL(url).origin === origin), requests.join('\n')); assert.deepEqual(failures, []);

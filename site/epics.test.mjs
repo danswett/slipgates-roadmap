@@ -54,13 +54,14 @@ test('empty and completed epics keep honest progress without false completion', 
     epic(802, { closed: 0, open: 0, state: 'CLOSED', open_prs: 0, merged_last_24h: 0 })]);
   const rows = [...html.matchAll(/<li class="[^"]*\bepic\b[^"]*">([\s\S]*?)<\/li>/g)].map((m) => m[1]);
   assert.equal(rows.length, 3);
-  assert.match(rows[0], /0%/);
-  assert.match(rows[0], /0 of 0 slices done/);
-  assert.doesNotMatch(rows[0], /chip done|NaN|Infinity/);
+  assert.match(rows[0], /No slices planned/);
+  assert.doesNotMatch(rows[0], /class="pct|role="progressbar"|0 of 0|chip done|NaN|Infinity/);
   assert.match(rows[1], /100%/);
   assert.match(rows[1], /chip done/);
   assert.match(rows[1], /Done/);
   assert.match(rows[2], /chip done/);
+  assert.match(rows[2], /No slices planned/);
+  assert.doesNotMatch(rows[2], /class="pct|role="progressbar"|0 of 0/);
 });
 
 test('invalid epic detail data is visibly unavailable, never invented as zero', () => {

@@ -86,7 +86,7 @@ test('fresh D1/D4 data renders agent-bridge only, its update time and safe total
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('missing or malformed data yields a timestamped static unavailable page; reasons are escaped', () => {
+test('missing or malformed data yields plain unavailable copy and keeps diagnostics in stderr', () => {
   const dir = mkdtempSync(join(tmpdir(), 'roadmap-'));
   try {
     const data = join(dir, 'data.json'), out = join(dir, 'out');
@@ -100,7 +100,25 @@ test('missing or malformed data yields a timestamped static unavailable page; re
       assert.match(html, /Content-Security-Policy/);
       assert.doesNotMatch(html, /<script\b|<(?:link|img|iframe)\b[^>]*\b(?:src|href)=["'](?:https?:)?\/\/|http-equiv="refresh"/i);
       assert.match(run.stderr, /Data unavailable/);
-      if (input?.includes('bad')) assert.match(html, /&lt;script&gt;bad&lt;\/script&gt;/);
+      assert.doesNotMatch(html, /Data unavailable:|&lt;script&gt;bad|valid update time|Data artifact/);
+      if (input?.includes('bad')) assert.match(run.stderr, /<script>bad<\/script>/);
     }
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('partial tiles use one muted unavailable note and preserve the real merge count', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'roadmap-partial-'));
+  try {
+    const data = join(dir, 'data.json'), out = join(dir, 'out');
+    writeFileSync(data, JSON.stringify({ updatedAt: new Date().toISOString(), epics: [],
+      stats: { 'danswett/agent-bridge': { commits: { total: 1 }, issues: { counts: { resolved: 1, total: 2 } }, merges: { last_24_hours: 17 } } } }));
+    const run = spawnSync(process.execPath, ['site/build.mjs', data, out], { encoding: 'utf8' });
+    assert.equal(run.status, 0, run.stderr);
+    const html = readFileSync(join(out, 'index.html'), 'utf8');
+    const people = html.split('<h2>People at work</h2>')[1]?.split('<section')[0];
+    assert.equal(people?.match(/Data unavailable/g)?.length, 1);
+    assert.doesNotMatch(people, /Data unavailable (?:builders|reviewers)/);
+    assert.match(html, /17 in the last 24 h<\/div><div class="none">Data unavailable/);
+    assert.match(html, /<footer>.*private slipgates-fleet epics.*No cookies, no trackers, no outside requests\./s);
+  } finally { rmSync(dir, { recursive: true }); }
 });

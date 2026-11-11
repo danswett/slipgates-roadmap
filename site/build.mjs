@@ -43,16 +43,26 @@ const epics = reason ? [] : value.epics.filter((e) => !e.repository || e.reposit
 const done = epics.reduce((n, e) => n + e.closed, 0), total = epics.reduce((n, e) => n + e.closed + e.open, 0);
 const tile = (title, body) => `<div class="card"><h2>${title}</h2>${body}</div>`;
 const number = (n) => { const result = count(n); return `<div class="${typeof result === 'number' ? 'stat num' : 'none'}">${result}</div>`; };
+const mergedTile = () => {
+  const all = count(value.totals?.prsMerged), recent = `<div class="sub">${count(stats?.merges?.last_24_hours)} in the last 24 h</div>`;
+  return typeof all === 'number' ? number(all) + recent : recent + '<div class="none">Data unavailable</div>';
+};
+const peopleTile = () => {
+  const roles = ['builders', 'reviewers'].map((role) => [role, count(value.people?.[role])]);
+  const known = roles.filter(([, n]) => typeof n === 'number');
+  return (known.length ? `<div class="people">${known.map(([role, n]) => `<div>${number(n)}<span class="sub">${role}</span></div>`).join('')}</div>` : '') +
+    (known.length < roles.length ? '<div class="none">Data unavailable</div>' : '');
+};
 const time = `<time datetime="${escape(timestamp)}">${escape(updated)}</time>`, stale = Date.now() - Date.parse(timestamp) > 15 * 60000;
 const stamp = `<span class="stamp${reason ? ' stale' : ''}">${reason ? warn : clock}<span>${stale ? 'Out of date. Last update ' : reason ? 'Data unavailable. ' : 'Updated '}${time}</span></span>`;
 const content = reason
-  ? `<section class="hero"><h1>Data unavailable</h1><p class="lede">The roadmap could not read its data at ${time}. It tries again every few minutes. Nothing is lost.</p><p>Data unavailable: ${escape(reason)}</p></section>`
+  ? `<section class="hero"><h1>Data unavailable</h1><p class="lede">The roadmap could not read its data at ${time}. It tries again every few minutes. Nothing is lost.</p>${stale ? `<p class="lede">The last good update was at ${time}.</p>` : ''}</section>`
   : `<section class="hero"><h1>Where Slipgates stands</h1><p class="lede">Progress on each epic, and how fast the work is landing. Public repository data only.</p>
 <div class="hero-bar"><div class="row"><span class="big num">${percent(done, total)}%</span><span class="lbl">${done} of ${total} planned slices done across ${epics.length} epics</span></div>${bar(done, total, 'All epics')}</div></section>
 <div class="grid tiles" aria-label="Totals">${tile('Commits', number(stats?.commits?.total) + '<div class="sub">on main, all time</div>')}
-${tile('Pull requests merged', number(value.totals?.prsMerged) + `<div class="sub">${count(stats?.merges?.last_24_hours)} in the last 24 h</div>`)}
+${tile('Pull requests merged', mergedTile())}
 ${tile('Issues resolved', `<div class="stat num">${count(issues?.resolved)}<small>of ${count(issues?.total)}</small></div>` + ([issues?.resolved, issues?.total].every(Number.isSafeInteger) && issues.resolved >= 0 && issues.total >= issues.resolved ? bar(issues.resolved, issues.total, 'Issues resolved', true) : ''))}
-${tile('People at work', `<div class="people"><div>${number(value.people?.builders)}<span class="sub">builders</span></div><div>${number(value.people?.reviewers)}<span class="sub">reviewers</span></div></div>`)}</div>
+${tile('People at work', peopleTile())}</div>
 <section class="grid" aria-labelledby="h-ep"><h2 id="h-ep">Epics</h2><ul class="epics">${renderEpics(epics, escape)}</ul></section>`;
 mkdirSync(out, { recursive: true });
 for (const asset of ['tokens.css', 'style.css', 'fonts']) cpSync(fileURLToPath(new URL(asset, import.meta.url)), join(out, asset), { recursive: true });
@@ -63,5 +73,5 @@ writeFileSync(join(out, 'index.html'), `<!doctype html>
 <title>Slipgates roadmap</title><meta name="color-scheme" content="light dark"><link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="style.css">
 </head><body><div class="wrap"><header class="top"><a class="lockup" href="./">${mark}<span>Slipgates</span><span class="sep" aria-hidden="true">/</span><span>Roadmap</span></a>${stamp}</header><main>
 ${content}${renderFleetCounts(fleet)}
-</main></div></body></html>
+</main><footer><span>Public data from github.com/danswett/agent-bridge; private slipgates-fleet epics are not included.</span><span>No cookies, no trackers, no outside requests.</span></footer></div></body></html>
 `);
