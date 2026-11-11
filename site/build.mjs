@@ -4,8 +4,9 @@ import { fileURLToPath } from 'node:url';
 import { readFleetCounts, renderFleetCounts } from './fleet-counts.mjs';
 import { renderEpics, renderNeedsBlocker, validEpicDetails } from './epics.mjs';
 import { renderCharts } from './charts.mjs';
+import { readPeopleCounts, renderPeopleCounts } from './people-at-work.mjs';
 
-const [data = 'data/roadmap.json', out = '_site', fleet = 'data/fleet-counts.json'] = process.argv.slice(2);
+const [data = 'data/roadmap.json', out = '_site', fleet = 'data/fleet-counts.json', people = 'data/people-at-work.json'] = process.argv.slice(2);
 let value, reason = '';
 try {
   value = JSON.parse(readFileSync(data, 'utf8'));
@@ -51,12 +52,7 @@ const mergedTile = () => {
   const detail = `<div class="sub">${typeof recent === 'number' && combined ? count(recent + fleetCounts.prsMerged24h) : recent} in the last 24 h${typeof all === 'number' && !combined ? '; agent-bridge only' : ''}</div>`;
   return typeof all === 'number' ? number(all + (combined ? fleetCounts.prsMergedTotal : 0)) + detail : detail + '<div class="none">Data unavailable</div>';
 };
-const peopleTile = () => {
-  const roles = ['builders', 'reviewers'].map((role) => [role, count(value.people?.[role])]);
-  const known = roles.filter(([, n]) => typeof n === 'number');
-  return (known.length ? `<div class="people">${known.map(([role, n]) => `<div>${number(n)}<span class="sub">${role}</span></div>`).join('')}</div>` : '') +
-    (known.length < roles.length ? '<div class="none">Data unavailable</div>' : '');
-};
+const peopleTile = () => renderPeopleCounts(readPeopleCounts(people));
 const time = `<time datetime="${escape(timestamp)}">${escape(updated)}</time>`, stale = Date.now() - Date.parse(timestamp) > 15 * 60000;
 const stamp = `<span class="stamp${reason ? ' stale' : ''}">${reason ? warn : clock}<span>${stale ? 'Out of date. Last update ' : reason ? 'Data unavailable. ' : 'Updated '}${time}</span></span>`;
 const content = reason

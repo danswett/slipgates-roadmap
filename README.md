@@ -52,6 +52,14 @@ Epic cards show child progress, open children, blockers, open PRs and 24-hour me
 in the generator's #696-then-priority order. Invalid epic details show Data unavailable.
 Missing live people counts remain explicitly unavailable;
 30-day authors and review families are not presented as people at work.
+People counts come only from public `people-at-work.json` on `fleet-counts`,
+fetched without credentials. Exactly `schema: 1`, UTC `generatedAt`, and integer
+`builders`/`reviewers` from 0 to 1000 are accepted. Missing/invalid files, extra
+keys, times over one minute ahead or over 15 minutes old show Data unavailable.
+The private producer counts working SG Builder/Worker and SG Reviewer sessions,
+plus idle/waiting sessions whose state changed within 30 minutes. State-change
+time is a proxy for activity, not a true last-activity time; leads are excluded.
+Names, nodes, machines, titles and paths never reach this file or the page.
 Tokens and self-hosted fonts are the approved agent-bridge brand assets (OFL in
 `site/fonts`); the stylesheet follows the Creative board.
 Chart cards use the latest 24 hourly merges and 14 Pacific daily merge buckets,

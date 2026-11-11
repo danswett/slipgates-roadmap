@@ -8,7 +8,7 @@ import { spawn, spawnSync } from 'node:child_process';
 
 test('designed roadmap renders on phone and desktop without outside requests', { timeout: 90000 }, async () => {
   const dir = mkdtempSync(join(tmpdir(), 'roadmap-design-')), out = join(dir, 'out');
-  const data = join(dir, 'data.json'), requests = [], failures = [], pending = new Map();
+  const data = join(dir, 'data.json'), people = join(dir, 'people.json'), requests = [], failures = [], pending = new Map();
   const value = { updatedAt: new Date().toISOString(), totals: { prsMerged: 100 }, people: { builders: 3, reviewers: 2 },
     epics: [{ number: 2, title: 'Finished', closed: 3, open: 0, priority_order: 1, open_prs: 0, merged_last_24h: 4, blockers: [] },
       { number: 1, title: 'Blocked', closed: 1, open: 2, priority_order: 2, open_prs: 2, merged_last_24h: 1, blockers: [7],
@@ -49,7 +49,8 @@ test('designed roadmap renders on phone and desktop without outside requests', {
     await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }, { name: 'prefers-reduced-motion', value: 'reduce' }] });
     for (const width of [390, 820, 1180, 1376]) for (const state of ['fresh', 'partial', 'missing', 'stale']) {
       writeFileSync(data, JSON.stringify(state === 'missing' ? { error: 'Repository read failed' } : { ...value, ...(state === 'partial' ? { people: undefined, totals: undefined, stats: { 'danswett/agent-bridge': { ...value.stats['danswett/agent-bridge'], prsMergedTotal: undefined, merges: { last_24_hours: 17 }, pull_requests: undefined, ci: undefined } } } : {}), ...(state === 'stale' ? { updatedAt: new Date(Date.now() - 3600000).toISOString() } : {}) }));
-      const build = spawnSync(process.execPath, ['site/build.mjs', data, out], { encoding: 'utf8' }); assert.equal(build.status, 0, build.stderr);
+      writeFileSync(people, JSON.stringify(state === 'fresh' ? { schema: 1, generatedAt: value.updatedAt, builders: 3, reviewers: 2 } : null));
+      const build = spawnSync(process.execPath, ['site/build.mjs', data, out, join(dir, 'missing-fleet'), people], { encoding: 'utf8' }); assert.equal(build.status, 0, build.stderr);
       await send('Emulation.setDeviceMetricsOverride', { width, height: 1000, deviceScaleFactor: 1, mobile: false });
       await send('Emulation.setTouchEmulationEnabled', { enabled: width === 390, maxTouchPoints: 1 });
       await send('Page.navigate', { url: `${origin}/?${width}-${state}` });
@@ -85,6 +86,8 @@ test('designed roadmap renders on phone and desktop without outside requests', {
         const charts = await evaluate(`({ spark: document.querySelectorAll('.spark .dot').length, bars: document.querySelectorAll('.bars i').length, tables: document.querySelectorAll('.charts details').length, notes: document.querySelector('.charts').textContent.match(/Data unavailable/g)?.length ?? 0 })`);
         assert.deepEqual(charts, state === 'fresh' ? { spark: 1, bars: 14, tables: 2, notes: 0 } : { spark: 0, bars: 0, tables: 0, notes: 4 });
         if (state === 'fresh') {
+          assert.deepEqual(await evaluate("[...document.querySelectorAll('.people .stat')].map(e => e.textContent)"), ['3', '2']);
+          assert.ok(await evaluate("document.querySelector('.people + .sub time')?.dateTime"));
           await evaluate("document.querySelectorAll('.charts details').forEach(e => e.open = true)");
           assert.equal(await evaluate("document.documentElement.scrollWidth > innerWidth"), false);
           assert.equal(await evaluate("[...document.querySelectorAll('.charts summary')].every(e => e.getBoundingClientRect().height >= 44)"), true);

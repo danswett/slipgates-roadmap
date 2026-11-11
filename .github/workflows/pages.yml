@@ -58,6 +58,12 @@ jobs:
           mkdir -p data
           curl --fail --silent --show-error --max-time 15 --max-filesize 4096 --output data/fleet-counts.tmp https://raw.githubusercontent.com/danswett/slipgates-roadmap/fleet-counts/fleet-counts.json
           mv data/fleet-counts.tmp data/fleet-counts.json
+      - name: Fetch public people counts
+        continue-on-error: true
+        run: |
+          mkdir -p data
+          curl --fail --silent --show-error --max-time 15 --max-filesize 4096 --output data/people-at-work.tmp https://raw.githubusercontent.com/danswett/slipgates-roadmap/fleet-counts/people-at-work.json
+          mv data/people-at-work.tmp data/people-at-work.json
       - run: node site/build.mjs data/roadmap.json _site
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
