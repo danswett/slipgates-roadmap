@@ -12,8 +12,8 @@ test('designed roadmap renders on phone and desktop without outside requests', {
   const value = { updatedAt: new Date().toISOString(), totals: { prsMerged: 100 }, people: { builders: 3, reviewers: 2 },
     epics: [{ number: 2, title: 'Finished', closed: 3, open: 0, priority_order: 1, open_prs: 0, merged_last_24h: 4, blockers: [] },
       { number: 1, title: 'Blocked', closed: 1, open: 2, priority_order: 2, open_prs: 2, merged_last_24h: 1, blockers: [7],
-        blocked: true, blockerDetails: [{ number: 8, title: 'Phone layout decision', reason: 'waiting on the phone layout decision from the design review next week', clearsIt: 'Creative' }],
-        blockedChildren: [{ number: 7, title: 'Row menu on a phone', clearsIt: 'Creative', blockers: [{ number: 8, title: 'Phone layout decision', reason: 'waiting on the phone layout decision from the design review next week', clearsIt: 'Creative' }] },
+        blocked: true, blockerDetails: [{ number: 1925, title: 'Phone layout decision', reason: 'waiting on the phone layout decision from the design review next week', clearsIt: 'Creative' }],
+        blockedChildren: [{ number: 7, title: 'Row menu on a phone', clearsIt: 'Creative', blockers: [{ number: 1925, title: 'Phone layout decision', reason: 'waiting on the phone layout decision from the design review next week', clearsIt: 'Creative' }] },
           { number: 9, title: 'Missing source blocker', clearsIt: 'Unassigned', blockers: [{ number: null, title: 'No blocker recorded', reason: 'No blocker recorded', clearsIt: 'Unassigned' }] }] },
       { number: 3, title: 'No slices yet', closed: 0, open: 0, priority_order: 3, open_prs: 0, merged_last_24h: 0, blockers: [] }],
     stats: { 'danswett/agent-bridge': { commits: { total: 456 }, issues: { counts: { total: 123, resolved: 90 } },
@@ -65,7 +65,8 @@ test('designed roadmap renders on phone and desktop without outside requests', {
         assert.equal(view.title, 'Where Slipgates stands'); assert.equal(view.tiles, 4); assert.equal(view.epics.length, 3);
         assert.match(view.epics[0].id, /#2.*Finished/); assert.equal(view.epics[0].bar, '3 of 3 slices done'); assert.match(view.epics[0].chip, /Done/);
         const badge = await evaluate(`({ text: document.querySelector('.blk summary')?.textContent, height: document.querySelector('.blk summary')?.getBoundingClientRect().height, motion: getComputedStyle(document.querySelector('.blk .chev') ?? document.body).transitionDuration })`);
-        assert.match(badge.text, /Blocked by #8/); assert.match(badge.text, /\+1 more/); assert.ok(badge.height >= (width === 390 ? 44 : 32)); assert.equal(badge.motion, '0s');
+        assert.match(badge.text, /Blocked by #1925/); assert.match(badge.text, /\+1 more/); assert.ok(badge.height >= (width === 390 ? 44 : 32)); assert.equal(badge.motion, '0s');
+        assert.equal(await evaluate("(() => { const label = document.querySelector('.blk .what b').getBoundingClientRect(), what = document.querySelector('.blk .what').getBoundingClientRect(); return label.right <= what.right && label.height < 25; })()"), true, `${width}-${state}: issue label never clips or wraps`);
         assert.equal(await evaluate("(() => { const more = document.querySelector('.blk .more').getBoundingClientRect(), summary = document.querySelector('.blk summary').getBoundingClientRect(); return more.top >= summary.top && more.bottom <= summary.bottom && more.right <= summary.right; })()"), true, `${width}-${state}: more count stays visible`);
         await send('Runtime.evaluate', { expression: "document.querySelector('.blk summary').focus()" });
         await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, text: '\r' });
