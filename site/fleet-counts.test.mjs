@@ -53,7 +53,9 @@ test('missing, malformed, stale or non-allow-listed fleet data fails only its pa
   const counts = sample();
   const missing = { ...counts }; delete missing.commits;
   const missingBin = { ...counts }; delete missingBin.mergeHour23;
-  for (const input of [undefined, '{', null, [], missing, missingBin, { ...counts, schema: 2 },
+  const placeholder = Object.fromEntries(Object.keys(counts).map((key) => [key, 0]));
+  Object.assign(placeholder, { schema: 1, generatedAt: '1970-01-01T00:00:00Z' });
+  for (const input of [undefined, '{', null, [], missing, missingBin, placeholder, { ...counts, schema: 2 },
     { ...counts, prsMerged24h: 301 }, { ...counts, prsMerged14d: 106 }, { ...counts, mergeHour24: 0 },
     { ...counts, mergeHour00: 1.5 }, { ...counts, mergeDay00: -1 },
     ...['4', 1.5, -1, 100000001, true, {}, []].map((issuesOpen) => ({ ...counts, issuesOpen })),
