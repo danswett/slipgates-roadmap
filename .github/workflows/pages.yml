@@ -20,7 +20,15 @@ jobs:
       issues: read
       pull-requests: read
     steps:
-      - run: echo '{"unavailable":"Generator hookup follows R1."}' > roadmap.json
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Read public epics and statistics
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python tools/epic-dashboard/repo_dashboard.py --json-output roadmap.json --body-output "$RUNNER_TEMP/dashboard.md"
+          python -c "import json; from pathlib import Path; from datetime import datetime, timezone; p = Path('roadmap.json'); d = json.loads(p.read_text()); d['updatedAt'] = datetime.now(timezone.utc).isoformat(); p.write_text(json.dumps(d))"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: roadmap-data
