@@ -1,0 +1,10 @@
+{
+  "priority_body": "| Horizon | Epic |\n| Now | [#750](url) |\n| Next | [#749](url) |",
+  "epics": [
+    {"number":749,"title":"Trust | safety","state":"CLOSED","labels":{"nodes":[]},"children":[
+      {"number":209,"state":"OPEN","labels":{"nodes":[{"name":"status:blocked"}]},"closedByPullRequestsReferences":{"nodes":[{"number":300,"state":"OPEN","mergedAt":null}],"pageInfo":{"hasNextPage":false}}},
+      {"number":220,"state":"CLOSED","labels":{"nodes":[]},"closedByPullRequestsReferences":{"nodes":[{"number":301,"state":"MERGED","mergedAt":"2026-11-10T12:15:00Z"},{"number":302,"state":"CLOSED","mergedAt":null}],"pageInfo":{"hasNextPage":false}}},
+      {"number":212,"state":"CLOSED","labels":{"nodes":[]},"closedByPullRequestsReferences":{"nodes":[{"number":301,"state":"MERGED","mergedAt":"2026-11-10T12:15:00Z"},{"number":303,"state":"MERGED","mergedAt":"2026-11-09T12:00:00Z"}],"pageInfo":{"hasNextPage":false}}}]},
+    {"number":750,"title":"Reliability","state":"OPEN","labels":{"nodes":[]},"children":[]}
+  ]
+}
