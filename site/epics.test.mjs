@@ -50,15 +50,17 @@ test('every public epic has progress, child counts, PRs and blockers in D1 roadm
 
 test('empty and completed epics keep honest progress without false completion', () => {
   const { html } = render([epic(800, { closed: 0, open: 0, open_prs: 0, merged_last_24h: 0 }),
-    epic(801, { closed: 3, open: 0, state: 'CLOSED' })]);
+    epic(801, { closed: 3, open: 0, state: 'CLOSED' }),
+    epic(802, { closed: 0, open: 0, state: 'CLOSED', open_prs: 0, merged_last_24h: 0 })]);
   const rows = [...html.matchAll(/<li class="[^"]*\bepic\b[^"]*">([\s\S]*?)<\/li>/g)].map((m) => m[1]);
-  assert.equal(rows.length, 2);
+  assert.equal(rows.length, 3);
   assert.match(rows[0], /0%/);
   assert.match(rows[0], /0 of 0 slices done/);
   assert.doesNotMatch(rows[0], /chip done|NaN|Infinity/);
   assert.match(rows[1], /100%/);
   assert.match(rows[1], /chip done/);
   assert.match(rows[1], /Done/);
+  assert.match(rows[2], /chip done/);
 });
 
 test('invalid epic detail data is visibly unavailable, never invented as zero', () => {
