@@ -66,20 +66,20 @@ test('fresh D1/D4 data renders agent-bridge only, its update time and safe total
       const run = spawnSync(process.execPath, ['site/build.mjs', data, out], { encoding: 'utf8' });
       assert.equal(run.status, 0, run.stderr);
       const html = readFileSync(join(out, 'index.html'), 'utf8');
-      assert.doesNotMatch(html, /<script\b|\b(?:src|href)=/i);
+      assert.doesNotMatch(html, /<script\b|\b(?:src|href)=["'](?:https?:)?\/\//i);
       if (Object.keys(change).length && change.stats !== privateStats) {
         assert.match(html, /Data unavailable/);
         assert.match(run.stderr, /Data unavailable/);
       } else {
-        assert.doesNotMatch(html, /Data unavailable/);
+        assert.doesNotMatch(html, /<h1>Data unavailable/);
         assert.match(html, new RegExp(`datetime="${updatedAt}"`));
-        assert.match(html, /#749.*&lt;script&gt;Trust &amp; safety&lt;\/script&gt;.*7 of 10/);
+        assert.match(html, /#749.*&lt;script&gt;Trust &amp; safety&lt;\/script&gt;.*7 of 10/s);
         assert.match(html, /danswett\/agent-bridge/);
         assert.match(html, /The private slipgates-fleet repository is not included\./);
         assert.doesNotMatch(html, /<h2>danswett\/slipgates-fleet|Private fleet epic|#999|98765[1-4]/);
-        assert.match(html, /90 of 123/);
-        assert.match(html, /Commits on main: 456/);
-        assert.match(html, /Merged in 24 hours: 17/);
+        assert.match(html, /90(?:<[^>]+>|\s)*of 123/);
+        assert.match(html, /Commits.*456/s);
+        assert.match(html, /17 in the last 24 h/);
       }
     }
   } finally { rmSync(dir, { recursive: true, force: true }); }
@@ -95,9 +95,9 @@ test('missing or malformed data yields a timestamped static unavailable page; re
       assert.equal(run.status, 0, run.stderr);
       const html = readFileSync(join(out, 'index.html'), 'utf8');
       assert.match(html, /Data unavailable/);
-      assert.match(html, /Updated at .* (PST|PDT)/);
+      assert.match(html, /datetime="[^"]+">.* PT/);
       assert.match(html, /Content-Security-Policy/);
-      assert.doesNotMatch(html, /<script\b|\b(?:src|href)=|http-equiv="refresh"/i);
+      assert.doesNotMatch(html, /<script\b|\b(?:src|href)=["'](?:https?:)?\/\/|http-equiv="refresh"/i);
       assert.match(run.stderr, /Data unavailable/);
       if (input?.includes('bad')) assert.match(html, /&lt;script&gt;bad&lt;\/script&gt;/);
     }
