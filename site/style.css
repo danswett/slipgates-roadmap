@@ -25,6 +25,7 @@ h1{margin:0;font-size:clamp(1.75rem,4.5vw,2.75rem);line-height:1.1;font-weight:6
 .stat{font-size:2rem;line-height:1.1;font-weight:600}.stat:has(+.sub){margin-bottom:4px}
 .stat small,.sub{font-family:var(--ab-font-sans);font-size:.875rem;color:var(--ab-text2);font-weight:400}.stat small{margin-left:4px}
 .people{display:flex;gap:8px;flex-wrap:wrap}.people>div{min-width:max-content;flex:1}
+.people-stale:not([hidden]){display:inline-block;margin-left:4px;padding:0 6px;border:1px solid currentColor;border-radius:var(--ab-radius-pill);color:var(--ab-needs-text);font-size:.75rem;font-weight:600}
 .stat.num:has(~.sub){overflow-wrap:anywhere}.sub{margin-top:4px}.none{color:var(--ab-text2);font-size:1rem}
 .epics{list-style:none;margin:0;padding:0;display:grid;gap:12px}.grid>h2{margin:0;font-size:1.125rem}
 .epic{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px}

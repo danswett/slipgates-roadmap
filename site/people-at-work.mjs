@@ -29,5 +29,6 @@ export function renderPeopleCounts(value) {
     month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(value.generatedAt));
   return `<div class="people">${['builders', 'reviewers'].map((role) =>
     `<div><div class="stat num">${value[role]}</div><span class="sub">${role}</span></div>`).join('')}</div>
-<div class="sub">Generated <time datetime="${value.generatedAt}">${at} PT</time></div>`;
+<div class="sub">Generated <time data-people-generated-at datetime="${value.generatedAt}">${at} PT</time>
+<span class="people-stale" data-people-stale hidden role="status">Stale</span></div>`;
 }
