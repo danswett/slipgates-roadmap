@@ -9,9 +9,9 @@ const workflow = () => readFileSync('.github/workflows/pages.yml', 'utf8').repla
 const job = (name) => workflow().split(`  ${name}:\n`)[1]?.split(/\n  \w+:\n/)[0] ?? '';
 const assertLocalFreshnessScript = (html) => {
   assert.deepEqual([...html.matchAll(/<script\b[^>]*>[\s\S]*?<\/script>/gi)].map(([script]) => script),
-    ['<script type="module" src="people-freshness.mjs"></script>']);
+    ['<script type="module" src="live-counts.mjs"></script>']);
   assert.equal(html.match(/http-equiv="Content-Security-Policy" content="([^"]+)"/)?.[1],
-    "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; base-uri 'none'; form-action 'none'");
+    "default-src 'none'; script-src 'self'; connect-src https://raw.githubusercontent.com/danswett/slipgates-roadmap/fleet-counts/; style-src 'self' 'unsafe-inline'; font-src 'self'; base-uri 'none'; form-action 'none'");
   assert.doesNotMatch(html, /<(?:link|img|iframe)\b[^>]*\b(?:src|href)=["'](?:https?:)?\/\//i);
 };
 
@@ -75,7 +75,7 @@ test('fresh D1/D4 data renders agent-bridge only, its update time and safe total
       assert.equal(run.status, 0, run.stderr);
       const html = readFileSync(join(out, 'index.html'), 'utf8');
       assertLocalFreshnessScript(html);
-      assert.ok(existsSync(join(out, 'people-freshness.mjs')));
+      assert.ok(existsSync(join(out, 'live-counts.mjs')));
       if (Object.keys(change).length && change.stats !== privateStats) {
         assert.match(html, /Data unavailable/);
         assert.match(run.stderr, /Data unavailable/);
