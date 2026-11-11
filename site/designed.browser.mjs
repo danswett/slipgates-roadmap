@@ -14,7 +14,9 @@ test('designed roadmap renders on phone and desktop without outside requests', {
       { number: 1, title: 'Blocked', closed: 1, open: 2, priority_order: 2, open_prs: 2, merged_last_24h: 1, blockers: [7] },
       { number: 3, title: 'No slices yet', closed: 0, open: 0, priority_order: 3, open_prs: 0, merged_last_24h: 0, blockers: [] }],
     stats: { 'danswett/agent-bridge': { commits: { total: 456 }, issues: { counts: { total: 123, resolved: 90 } },
-      merges: { last_24_hours: 17 } } } };
+      merges: { last_24_hours: 17, per_hour: Array.from({ length: 48 }, (_, i) => ({ at: new Date((Math.floor(Date.now() / 3600000) - 47 + i) * 3600000).toISOString(), count: i % 8 })) },
+      pull_requests: { merged_per_day: Array.from({ length: 30 }, (_, i) => ({ at: new Date(Date.UTC(2026, 9, 1 + i)).toISOString().slice(0, 10), count: i })), median_hours_to_merge: 1.25 },
+      ci: { median_minutes: 6.8 } } } };
   const server = createServer((req, res) => {
     const path = new URL(req.url, 'http://localhost').pathname;
     try { res.setHeader('Content-Type', path.endsWith('.css') ? 'text/css' : path.endsWith('.woff2') ? 'font/woff2' : 'text/html'); res.end(readFileSync(join(out, path === '/' ? 'index.html' : path.slice(1)))); }
@@ -43,7 +45,7 @@ test('designed roadmap renders on phone and desktop without outside requests', {
     await send('Network.enable'); await send('Page.enable');
     await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }, { name: 'prefers-reduced-motion', value: 'reduce' }] });
     for (const width of [390, 820, 1180, 1376]) for (const state of ['fresh', 'partial', 'missing', 'stale']) {
-      writeFileSync(data, JSON.stringify(state === 'missing' ? { error: 'Repository read failed' } : { ...value, ...(state === 'partial' ? { people: undefined, totals: undefined } : {}), ...(state === 'stale' ? { updatedAt: new Date(Date.now() - 3600000).toISOString() } : {}) }));
+      writeFileSync(data, JSON.stringify(state === 'missing' ? { error: 'Repository read failed' } : { ...value, ...(state === 'partial' ? { people: undefined, totals: undefined, stats: { 'danswett/agent-bridge': { ...value.stats['danswett/agent-bridge'], merges: { last_24_hours: 17 }, pull_requests: undefined, ci: undefined } } } : {}), ...(state === 'stale' ? { updatedAt: new Date(Date.now() - 3600000).toISOString() } : {}) }));
       const build = spawnSync(process.execPath, ['site/build.mjs', data, out], { encoding: 'utf8' }); assert.equal(build.status, 0, build.stderr);
       await send('Emulation.setDeviceMetricsOverride', { width, height: 1000, deviceScaleFactor: 1, mobile: false });
       await send('Page.navigate', { url: `${origin}/?${width}-${state}` });
@@ -60,6 +62,23 @@ test('designed roadmap renders on phone and desktop without outside requests', {
         assert.match(view.epics[0].id, /#2.*Finished/); assert.equal(view.epics[0].bar, '3 of 3 slices done'); assert.match(view.epics[0].chip, /Done/);
         assert.match(view.epics[1].chip, /Blocked/); assert.equal(view.epics[2].bar, undefined); assert.equal(view.epics[2].chip, undefined);
         assert.equal(style.columns, width < 900 ? 2 : 4); assert.match(view.text, /No slices planned/);
+        assert.match(view.text, /Merges per hour, last 24 h/); assert.match(view.text, /Throughput/);
+        const charts = await evaluate(`({ spark: document.querySelectorAll('.spark .dot').length, bars: document.querySelectorAll('.bars i').length, tables: document.querySelectorAll('.charts details').length, notes: document.querySelector('.charts').textContent.match(/Data unavailable/g)?.length ?? 0 })`);
+        assert.deepEqual(charts, state === 'fresh' ? { spark: 1, bars: 14, tables: 2, notes: 0 } : { spark: 0, bars: 0, tables: 0, notes: 4 });
+        if (state === 'fresh') {
+          await evaluate("document.querySelectorAll('.charts details').forEach(e => e.open = true)");
+          assert.equal(await evaluate("document.documentElement.scrollWidth > innerWidth"), false);
+          assert.equal(await evaluate("[...document.querySelectorAll('.charts summary')].every(e => e.getBoundingClientRect().height >= 44)"), true);
+          assert.equal(await evaluate("[...document.querySelectorAll('.charts .line,.charts .bars i')].every(e => getComputedStyle(e).animationName === 'none')"), true);
+          for (const mode of ['light', 'contrast']) {
+            await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }, { name: 'forced-colors', value: mode === 'contrast' ? 'active' : 'none' }, { name: 'prefers-reduced-motion', value: 'reduce' }] });
+            assert.equal(await evaluate("document.documentElement.scrollWidth > innerWidth || [...document.querySelectorAll('.charts h2,.charts h3,.charts .stat,.charts summary,.charts th,.charts td')].some(e => e.scrollWidth > e.clientWidth + 1)"), false);
+            if (mode === 'contrast') assert.equal(await evaluate("getComputedStyle(document.querySelector('.spark .area')).fill"), 'none');
+            if (process.env.ROADMAP_SCREENSHOTS) { mkdirSync(process.env.ROADMAP_SCREENSHOTS, { recursive: true }); writeFileSync(join(process.env.ROADMAP_SCREENSHOTS, `${width}-${mode}.png`), Buffer.from((await send('Page.captureScreenshot', { captureBeyondViewport: true })).data, 'base64')); }
+          }
+          await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }, { name: 'forced-colors', value: 'none' }, { name: 'prefers-reduced-motion', value: 'reduce' }] });
+          await evaluate("document.querySelectorAll('.charts details').forEach(e => e.open = false)");
+        }
         assert.match(view.text, /4 of 6 planned slices done across 3 epics/); assert.ok(view.fonts.includes('Slipgates Mono'));
         if (state === 'partial') assert.equal(await evaluate("[...document.querySelectorAll('.tiles .card')].filter(e => /Pull requests merged|People at work/.test(e.textContent)).every(e => e.textContent.match(/Data unavailable/g)?.length === 1 && getComputedStyle(e.querySelector('.none')).fontSize === '16px' && !e.querySelector('.stat'))"), true);
       } else { assert.equal(view.title, 'Data unavailable'); if (state === 'stale') { assert.match(view.text, /Out of date\. Last update/); assert.match(view.text, /The last good update was at .* PT/); } }

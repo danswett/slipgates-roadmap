@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { renderFleetCounts } from './fleet-counts.mjs';
 import { renderEpics, validEpicDetails } from './epics.mjs';
+import { renderCharts } from './charts.mjs';
 
 const [data = 'data/roadmap.json', out = '_site', fleet = 'data/fleet-counts.json'] = process.argv.slice(2);
 let value, reason = '';
@@ -62,7 +63,7 @@ const content = reason
 <div class="grid tiles" aria-label="Totals">${tile('Commits', number(stats?.commits?.total) + '<div class="sub">on main, all time</div>')}
 ${tile('Pull requests merged', mergedTile())}
 ${tile('Issues resolved', `<div class="stat num">${count(issues?.resolved)}<small>of ${count(issues?.total)}</small></div>` + ([issues?.resolved, issues?.total].every(Number.isSafeInteger) && issues.resolved >= 0 && issues.total >= issues.resolved ? bar(issues.resolved, issues.total, 'Issues resolved', true) : ''))}
-${tile('People at work', peopleTile())}</div>
+${tile('People at work', peopleTile())}</div>${renderCharts(stats)}
 <section class="grid" aria-labelledby="h-ep"><h2 id="h-ep">Epics</h2><ul class="epics">${renderEpics(epics, escape)}</ul></section>`;
 mkdirSync(out, { recursive: true });
 for (const asset of ['tokens.css', 'style.css', 'fonts']) cpSync(fileURLToPath(new URL(asset, import.meta.url)), join(out, asset), { recursive: true });
