@@ -1,8 +1,9 @@
 import { readFileSync, mkdirSync, writeFileSync, cpSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { renderFleetCounts } from './fleet-counts.mjs';
 
-const [data = 'data/roadmap.json', out = '_site'] = process.argv.slice(2);
+const [data = 'data/roadmap.json', out = '_site', fleet = 'data/fleet-counts.json'] = process.argv.slice(2);
 let value, reason = '';
 try {
   value = JSON.parse(readFileSync(data, 'utf8'));
@@ -65,6 +66,6 @@ writeFileSync(join(out, 'index.html'), `<!doctype html>
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; base-uri 'none'; form-action 'none'">
 <title>Slipgates roadmap</title><meta name="color-scheme" content="light dark"><link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="style.css">
 </head><body><div class="wrap"><header class="top"><a class="lockup" href="./">${mark}<span>Slipgates</span><span class="sep" aria-hidden="true">/</span><span>Roadmap</span></a>${stamp}</header><main>
-${content}<p>The private slipgates-fleet repository is not included.</p>
+${content}${renderFleetCounts(fleet)}
 </main></div></body></html>
 `);

@@ -13,8 +13,15 @@ continue-on-error data job; only `roadmap.json` reaches the token-free static bu
 The page shows agent-bridge epics and totals with the data's `updatedAt` time.
 Missing, invalid or older-than-15-minute data renders Data unavailable; missing
 statistics are explicitly unavailable, never zero. No write to #755 is made.
-The private slipgates-fleet repository is not included: a plain exclusion line
-replaces its numbers and epics. Only confirmed-public source data is published.
+Fleet contributes only `fleet-counts.json` from this public repo's `fleet-counts`
+branch, fetched without credentials. A separate private producer owns publication;
+the public build never reads private content or holds its publication credential.
+The exact 45-key schema is `schema: 1`, UTC `generatedAt`, `issuesOpen`,
+`issuesResolved`, `commits`, `prsMerged24h`, `prsMerged14d`, `mergeHour00`-`23`
+and `mergeDay00`-`13`. Counts are integers 0-100000000; totals must sum their bins.
+Bins are completed UTC hours/days, oldest first. A missing, invalid, future-dated
+over one minute or over-two-hour-old file shows Fleet counts unavailable only in
+that panel. No private text or rejected payload is rendered or logged.
 The branded header, hero, totals and epic cards follow the approved #1897 design.
 Missing all-time merged-PR and live people counts remain explicitly unavailable;
 30-day authors and review families are not presented as people at work.

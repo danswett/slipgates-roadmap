@@ -15,6 +15,7 @@ function render(fleet, roadmap = true) {
   try {
     const data = join(dir, 'roadmap.json'), counts = join(dir, 'fleet.json'), out = join(dir, 'out');
     if (roadmap) writeFileSync(data, JSON.stringify({ updatedAt: new Date().toISOString(), epics: [],
+      totals: { prsMerged: 789 }, people: { builders: 3, reviewers: 2 },
       stats: { 'danswett/agent-bridge': { issues: { counts: { resolved: 90, total: 123 } },
         commits: { total: 456 }, merges: { last_24_hours: 17 } } } }));
     if (fleet !== undefined) writeFileSync(counts, typeof fleet === 'string' ? fleet : JSON.stringify(fleet));
@@ -40,8 +41,8 @@ test('only validated fleet counts render, independently of agent-bridge data', (
     }
     assert.doesNotMatch(html, /Average per hour/);
     assert.ok(html.includes(`datetime="${counts.generatedAt}"`));
-    assert.doesNotMatch(html, /Fleet counts unavailable|<script\b|\b(?:src|href)=/i);
-    if (roadmap) assert.match(html, /Issues resolved: 90 of 123/);
+    assert.doesNotMatch(html, /Fleet counts unavailable|<script\b|<(?:link|img|iframe)\b[^>]*\b(?:src|href)=["'](?:https?:)?\/\//i);
+    if (roadmap) assert.match(html, /90(?:<[^>]+>|\s)*of 123/);
   }
   const { html } = render({ ...counts, issuesOpen: 0, commits: 100000000,
     generatedAt: counts.generatedAt.replace('Z', '+00:00') });
@@ -61,7 +62,7 @@ test('missing, malformed, stale or non-allow-listed fleet data fails only its pa
     const { html, stderr } = render(input);
     assert.match(html, /Fleet counts unavailable/);
     assert.match(stderr, /Fleet counts unavailable/);
-    assert.match(html, /Issues resolved: 90 of 123/);
+    assert.match(html, /90(?:<[^>]+>|\s)*of 123/);
     assert.doesNotMatch(html, /commits: 12345|300 in 24 hours/);
   }
 });
