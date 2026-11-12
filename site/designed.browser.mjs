@@ -83,6 +83,11 @@ test('designed roadmap renders on phone and desktop without outside requests', {
       assert.ok(view.fonts.includes('Slipgates Sans')); assert.equal(view.motion, true); assert.match(view.text, /slipgates-fleet \(private repo, counts only\)/);
       if (state === 'fresh' || state === 'partial') {
         assert.equal(view.title, 'Where Slipgates stands'); assert.equal(view.tiles, 4); assert.equal(view.epics.length, 3);
+        const blockers = await evaluate(`(() => { const card = document.querySelector('[aria-labelledby="h-bl"]'); return card && { title: card.querySelector('h2').textContent, text: card.textContent, rows: card.querySelectorAll('li').length, glyphs: card.querySelectorAll('svg[aria-hidden="true"]').length, clipped: [...card.querySelectorAll('a,p')].some(e => e.scrollWidth > e.clientWidth + 1), color: getComputedStyle(card.querySelector('svg')).color, amber: getComputedStyle(document.querySelector('.blk summary svg')).color }; })()`);
+        assert.ok(blockers, `${width}-${state}: standalone Blockers card`);
+        assert.equal(blockers.title, 'Blockers'); assert.equal(blockers.rows, 1); assert.equal(blockers.glyphs, 1);
+        assert.match(blockers.text, /Blocked by #1925.*phone layout decision/); assert.match(blockers.text, /No blocker recorded/);
+        assert.equal(blockers.clipped, false); assert.equal(blockers.color, blockers.amber);
         assert.match(view.epics[0].id, /#2.*Finished/); assert.equal(view.epics[0].bar, '3 of 3 slices done'); assert.match(view.epics[0].chip, /Done/);
         const badge = await evaluate(`({ text: document.querySelector('.blk summary')?.textContent, height: document.querySelector('.blk summary')?.getBoundingClientRect().height, motion: getComputedStyle(document.querySelector('.blk .chev') ?? document.body).transitionDuration })`);
         assert.match(badge.text, /Blocked by #1925/); assert.match(badge.text, /\+1 more/); assert.ok(badge.height >= (width === 390 ? 44 : 32)); assert.equal(badge.motion, '0s');
@@ -158,7 +163,7 @@ test('designed roadmap renders on phone and desktop without outside requests', {
         }
         assert.match(view.text, /4 of 6 planned slices done across 3 epics/); assert.ok(view.fonts.includes('Slipgates Mono'));
         if (state === 'partial') assert.equal(await evaluate("[...document.querySelectorAll('.tiles .card')].filter(e => /Pull requests merged|People at work/.test(e.textContent)).every(e => e.textContent.match(/Data unavailable|Unavailable/g)?.length === 1 && getComputedStyle(e.querySelector('.none')).fontSize === '16px' && !e.querySelector('.stat'))"), true);
-      } else { assert.equal(view.title, 'Data unavailable'); if (state === 'stale') { assert.match(view.text, /Out of date\. Last update/); assert.match(view.text, /The last good update was at .* PT/); } }
+      } else { assert.equal(view.title, 'Data unavailable'); assert.equal(await evaluate("document.querySelector('[aria-labelledby=\"h-bl\"]')"), null); if (state === 'stale') { assert.match(view.text, /Out of date\. Last update/); assert.match(view.text, /The last good update was at .* PT/); } }
       if (process.env.ROADMAP_SCREENSHOTS) { mkdirSync(process.env.ROADMAP_SCREENSHOTS, { recursive: true }); writeFileSync(join(process.env.ROADMAP_SCREENSHOTS, `${width}-${state}.png`), Buffer.from((await send('Page.captureScreenshot', { captureBeyondViewport: true })).data, 'base64')); }
     }
     assert.ok(requests.some(url => url.endsWith('.woff2'))); assert.ok(publicUrls.every(url => requests.includes(url)));

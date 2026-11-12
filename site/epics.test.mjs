@@ -56,6 +56,41 @@ const child = (number, blockers, fields = {}) => ({ number, title: `Child ${numb
 const blockedEpic = (children, details = children.flatMap(c => c.blockers)) => epic(750,
   { blockers: children.map(c => c.number), blocked: true, blockedChildren: children, blockerDetails: details });
 
+const summary = (html) => {
+  const card = html.match(/<section class="card block" aria-labelledby="h-bl">([\s\S]*?)<\/section>/);
+  assert.ok(card, 'standalone Blockers card is present');
+  return card[1];
+};
+test('blockers summary names every public blocked epic and escaped cause without private details', () => {
+  const { html } = render([blockedEpic([child(1900, [blocker(55, { title: '<Reply>', reason: 'needs <reply> & approval' }),
+    blocker(66, { title: 'private item', reason: 'private item', clearsIt: 'not a role' })])]),
+    epic(800, { title: 'PRIVATE_SENTINEL', repository: 'danswett/slipgates-fleet', blockers: [900] }),
+    epic(801)]);
+  const card = summary(html);
+  assert.match(card, /<h2 id="h-bl">Blockers<\/h2>/);
+  assert.match(card, /aria-hidden="true"/);
+  assert.match(card, /issues\/750.*Epic 750/s);
+  assert.match(card, /Blocked by #55: needs &lt;reply&gt; &amp; approval/);
+  assert.match(card, /Clears it: Engineering/);
+  assert.match(card, /Blocked by private item.*Clears it: Unassigned/s);
+  assert.doesNotMatch(card, /PRIVATE_SENTINEL|issues\/66|#66|issues\/800|issues\/801|not a role|<reply>/);
+});
+test('blockers summary keeps unknown and legacy causes explicit, never calls them clear', () => {
+  for (const fields of [{ blockers: [1900] }, { blockers: [], blocked: true },
+    { blockers: [1900], blockedChildren: [child(1900, [blocker(null, { title: 'No blocker recorded', reason: 'No blocker recorded' })])] }]) {
+    const card = summary(render([epic(750, fields)]).html);
+    assert.match(card, /No blocker recorded/);
+    assert.doesNotMatch(card, /No blockers\.|Data unavailable|undefined/);
+  }
+});
+test('blockers summary says No blockers only for a valid clear public epic list', () => {
+  for (const epics of [[], [epic(750), epic(800, { repository: 'danswett/slipgates-fleet', blockers: [900] })]]) {
+    assert.match(summary(render(epics).html), /No blockers\./);
+  }
+  const invalid = render([epic(750, { blockers: null })]).html;
+  assert.doesNotMatch(invalid, /id="h-bl"|No blockers\./);
+});
+
 test('one blocker names the cause and opens a full escaped child, blocker and role list', () => {
   const { html } = render([blockedEpic([child(1927, [blocker(1925,
     { title: '<Reply & restart>', reason: 'missing <reply>, P0' })], { title: 'Child <reply>' })])]);
