@@ -36,6 +36,18 @@ export function renderNeedsBlocker(epics, escape) {
   return missing.length ? `<section class="need" aria-labelledby="h-need"><h2 id="h-need">Needs a blocker (${missing.length})</h2><p>These issues are marked blocked but have no stated blocker. Add two lines to each issue.</p><ul>${missing.map(c => `<li>${link(c.number, c.title, escape)}</li>`).join('')}</ul><p>Lines to add: <code>Blocked by #N</code> and <code>Clears it: Engineering</code></p></section>` : '';
 }
 
+export function renderBlockers(epics, escape) {
+  const blocked = [...epics].sort((a, b) => a.priority_order - b.priority_order || a.number - b.number)
+    .map(e => ({ epic: e, items: rows(e) })).filter(({ items }) => items.length);
+  const entries = blocked.map(({ epic, items }) => {
+    const causes = items.flatMap(c => c.blockers.some(recorded) ? c.blockers.filter(recorded).map(b =>
+      `${b.title === 'private item' ? 'Blocked by private item' : `Blocked by #${b.number}: ${escape(b.reason)}`}. Clears it: ${role(b.clearsIt ?? c.clearsIt)}.`) :
+      [`No blocker recorded. Clears it: ${role(c.clearsIt)}.`]);
+    return `<li>${warning}<div>${link(epic.number, epic.title, escape)}<p class="sub">${[...new Set(causes)].join('<br>')}</p></div></li>`;
+  }).join('');
+  return `<section class="card block" aria-labelledby="h-bl"><h2 id="h-bl">Blockers</h2>${entries ? `<ul>${entries}</ul>` : '<p class="none">No blockers.</p>'}</section>`;
+}
+
 export function renderEpics(epics, escape) {
   return [...epics].sort((a, b) => a.priority_order - b.priority_order || a.number - b.number).map((e) => {
     const total = e.closed + e.open, percent = total ? Math.round(e.closed / total * 100) : 0;
