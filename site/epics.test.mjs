@@ -61,9 +61,10 @@ const summary = (html) => {
   assert.ok(card, 'standalone Blockers card is present');
   return card[1];
 };
-test('blockers summary names every public blocked epic and escaped cause without private details', () => {
-  const { html } = render([blockedEpic([child(1900, [blocker(55, { title: '<Reply>', reason: 'needs <reply> & approval' }),
-    blocker(66, { title: 'private item', reason: 'private item', clearsIt: 'not a role' })])]),
+test('blockers summary names only public causes with a known clearing role and escapes their text', () => {
+  const { html } = render([blockedEpic([child(1900, [blocker(55, { title: '<Reply>', reason: 'needs <reply> & approval', clearsIt: undefined }),
+    blocker(56, { clearsIt: 'SRE' }), blocker(66, { title: 'private item', reason: 'private item' }),
+    blocker(77, { clearsIt: 'not a role' })])]),
     epic(800, { title: 'PRIVATE_SENTINEL', repository: 'danswett/slipgates-fleet', blockers: [900] }),
     epic(801)]);
   const card = summary(html);
@@ -72,15 +73,18 @@ test('blockers summary names every public blocked epic and escaped cause without
   assert.match(card, /issues\/750.*Epic 750/s);
   assert.match(card, /Blocked by #55: needs &lt;reply&gt; &amp; approval/);
   assert.match(card, /Clears it: Engineering/);
-  assert.match(card, /Blocked by private item.*Clears it: Unassigned/s);
-  assert.doesNotMatch(card, /PRIVATE_SENTINEL|issues\/66|#66|issues\/800|issues\/801|not a role|<reply>/);
+  assert.match(card, /Blocked by #56:.*Clears it: SRE/);
+  assert.doesNotMatch(card, /PRIVATE_SENTINEL|private item|#66|#77|issues\/800|issues\/801|Unassigned|not a role|<reply>/);
 });
-test('blockers summary keeps unknown and legacy causes explicit, never calls them clear', () => {
+test('blockers summary omits unknown, private and unassigned causes without claiming clear', () => {
   for (const fields of [{ blockers: [1900] }, { blockers: [], blocked: true },
-    { blockers: [1900], blockedChildren: [child(1900, [blocker(null, { title: 'No blocker recorded', reason: 'No blocker recorded' })])] }]) {
+    { blockers: [1900], blockedChildren: [child(1900, [blocker(null, { title: 'No blocker recorded', reason: 'No blocker recorded' })])] },
+    blockedEpic([child(1900, [blocker(55, { clearsIt: undefined })], { clearsIt: undefined })]),
+    blockedEpic([child(1900, [blocker(55, { clearsIt: 'Unassigned' })])]),
+    blockedEpic([child(1900, [blocker(55, { title: 'private item', reason: 'private item' })])])]) {
     const card = summary(render([epic(750, fields)]).html);
-    assert.match(card, /No blocker recorded/);
-    assert.doesNotMatch(card, /No blockers\.|Data unavailable|undefined/);
+    assert.match(card, /No named blockers\./);
+    assert.doesNotMatch(card, /<li|issues\/750|No blocker recorded|Unassigned|private item|No blockers\.|Data unavailable|undefined/);
   }
 });
 test('blockers summary says No blockers only for a valid clear public epic list', () => {

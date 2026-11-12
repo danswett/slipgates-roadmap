@@ -40,12 +40,13 @@ export function renderBlockers(epics, escape) {
   const blocked = [...epics].sort((a, b) => a.priority_order - b.priority_order || a.number - b.number)
     .map(e => ({ epic: e, items: rows(e) })).filter(({ items }) => items.length);
   const entries = blocked.map(({ epic, items }) => {
-    const causes = items.flatMap(c => c.blockers.some(recorded) ? c.blockers.filter(recorded).map(b =>
-      `${b.title === 'private item' ? 'Blocked by private item' : `Blocked by #${b.number}: ${escape(b.reason)}`}. Clears it: ${role(b.clearsIt ?? c.clearsIt)}.`) :
-      [`No blocker recorded. Clears it: ${role(c.clearsIt)}.`]);
+    const causes = items.flatMap(c => c.blockers.filter(b => recorded(b) && b.title !== 'private item' &&
+      role(b.clearsIt ?? c.clearsIt) !== 'Unassigned').map(b =>
+      `Blocked by #${b.number}: ${escape(b.reason)}. Clears it: ${role(b.clearsIt ?? c.clearsIt)}.`));
+    if (!causes.length) return '';
     return `<li>${warning}<div>${link(epic.number, epic.title, escape)}<p class="sub">${[...new Set(causes)].join('<br>')}</p></div></li>`;
   }).join('');
-  return `<section class="card block" aria-labelledby="h-bl"><h2 id="h-bl">Blockers</h2>${entries ? `<ul>${entries}</ul>` : '<p class="none">No blockers.</p>'}</section>`;
+  return `<section class="card block" aria-labelledby="h-bl"><h2 id="h-bl">Blockers</h2>${entries ? `<ul>${entries}</ul>` : `<p class="none">${blocked.length ? 'No named blockers.' : 'No blockers.'}</p>`}</section>`;
 }
 
 export function renderEpics(epics, escape) {

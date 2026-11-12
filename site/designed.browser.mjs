@@ -34,6 +34,7 @@ test('designed roadmap renders on phone and desktop without outside requests', {
   const browser = spawn(process.env.ROADMAP_BROWSER ?? 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
     ['--headless=new', '--disable-gpu', '--no-first-run', '--remote-debugging-port=0', `--user-data-dir=${join(dir, 'profile')}`], { stdio: ['ignore', 'ignore', 'pipe'] });
   let socket, sequence = 0;
+  const send = (method, params = {}) => new Promise((resolve, reject) => { const id = ++sequence; pending.set(id, { resolve, reject }); socket.send(JSON.stringify({ id, method, params })); });
   try {
     const endpoint = await new Promise((resolve, reject) => {
       let output = ''; browser.on('error', reject); browser.on('exit', (code) => reject(new Error(`Browser exited: ${code}\n${output}`)));
@@ -58,7 +59,6 @@ test('designed roadmap renders on phone and desktop without outside requests', {
       }
       if ((event.method === 'Network.loadingFailed' && !expectedFailures.has(event.params.requestId)) || (event.method === 'Network.responseReceived' && event.params.response.status >= 400)) failures.push(event);
     };
-    const send = (method, params = {}) => new Promise((resolve, reject) => { const id = ++sequence; pending.set(id, { resolve, reject }); socket.send(JSON.stringify({ id, method, params })); });
     const evaluate = async (expression) => { const result = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }); assert.equal(result.exceptionDetails, undefined, JSON.stringify(result)); return result.result.value; };
     await send('Network.enable'); await send('Page.enable');
     await send('Fetch.enable', { patterns: [{ urlPattern: `${raw}*`, requestStage: 'Request' }] });
@@ -86,8 +86,9 @@ test('designed roadmap renders on phone and desktop without outside requests', {
         const blockers = await evaluate(`(() => { const card = document.querySelector('[aria-labelledby="h-bl"]'); return card && { title: card.querySelector('h2').textContent, text: card.textContent, rows: card.querySelectorAll('li').length, glyphs: card.querySelectorAll('svg[aria-hidden="true"]').length, clipped: [...card.querySelectorAll('a,p')].some(e => e.scrollWidth > e.clientWidth + 1), color: getComputedStyle(card.querySelector('svg')).color, amber: getComputedStyle(document.querySelector('.blk summary svg')).color }; })()`);
         assert.ok(blockers, `${width}-${state}: standalone Blockers card`);
         assert.equal(blockers.title, 'Blockers'); assert.equal(blockers.rows, 1); assert.equal(blockers.glyphs, 1);
-        assert.match(blockers.text, /Blocked by #1925.*phone layout decision/); assert.match(blockers.text, /No blocker recorded/);
+        assert.match(blockers.text, /Blocked by #1925.*phone layout decision/); assert.doesNotMatch(blockers.text, /No blocker recorded|Unassigned|private item/);
         assert.equal(blockers.clipped, false); assert.equal(blockers.color, blockers.amber);
+        assert.equal(await evaluate("(() => { const link = document.querySelector('.block a'), markup = link.innerHTML; link.textContent = 'W'.repeat(300); const fits = link.scrollWidth <= link.clientWidth + 1 && document.documentElement.scrollWidth <= innerWidth; link.innerHTML = markup; return fits; })()"), true, `${width}-${state}: unbroken blocker title wraps`);
         assert.match(view.epics[0].id, /#2.*Finished/); assert.equal(view.epics[0].bar, '3 of 3 slices done'); assert.match(view.epics[0].chip, /Done/);
         const badge = await evaluate(`({ text: document.querySelector('.blk summary')?.textContent, height: document.querySelector('.blk summary')?.getBoundingClientRect().height, motion: getComputedStyle(document.querySelector('.blk .chev') ?? document.body).transitionDuration })`);
         assert.match(badge.text, /Blocked by #1925/); assert.match(badge.text, /\+1 more/); assert.ok(badge.height >= (width === 390 ? 44 : 32)); assert.equal(badge.motion, '0s');
@@ -168,5 +169,12 @@ test('designed roadmap renders on phone and desktop without outside requests', {
     }
     assert.ok(requests.some(url => url.endsWith('.woff2'))); assert.ok(publicUrls.every(url => requests.includes(url)));
     assert.ok(requests.every(url => new URL(url).origin === origin || publicUrls.includes(url)), requests.join('\n')); assert.deepEqual(failures, []);
-  } finally { socket?.close(); browser.kill(); await new Promise(resolve => browser.exitCode !== null ? resolve() : browser.once('exit', resolve)); await new Promise(resolve => server.close(resolve)); rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 }); }
+  } finally {
+    if (socket?.readyState === WebSocket.OPEN) await send('Browser.close');
+    else browser.kill();
+    socket?.close();
+    await new Promise(resolve => browser.exitCode !== null ? resolve() : browser.once('exit', resolve));
+    await new Promise(resolve => server.close(resolve));
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 });
+  }
 });
