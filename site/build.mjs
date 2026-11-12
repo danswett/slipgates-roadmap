@@ -2,7 +2,7 @@ import { readFileSync, mkdirSync, writeFileSync, cpSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { renderFleetCounts, renderMergedCounts } from './fleet-counts.mjs';
-import { renderEpics, renderNeedsBlocker, validEpicDetails } from './epics.mjs';
+import { renderEpics, renderNeedsBlocker, renderBlockers, validEpicDetails } from './epics.mjs';
 import { renderCharts } from './charts.mjs';
 import { renderPeopleCounts } from './people-at-work.mjs';
 import { readPeopleCounts, readFleetCounts } from './counts-files.mjs';
@@ -59,7 +59,7 @@ const content = reason
 ${tile('Pull requests merged', mergedTile())}
 ${tile('Issues resolved', `<div class="stat num">${count(issues?.resolved)}<small>of ${count(issues?.total)}</small></div>` + ([issues?.resolved, issues?.total].every(Number.isSafeInteger) && issues.resolved >= 0 && issues.total >= issues.resolved ? bar(issues.resolved, issues.total, 'Issues resolved', true) : ''))}
 ${tile('People at work', peopleTile())}</div>${renderCharts(stats)}
-<section class="grid" aria-labelledby="h-ep"><h2 id="h-ep">Epics</h2><ul class="epics">${renderEpics(epics, escape)}</ul></section>${renderNeedsBlocker(epics, escape)}`;
+<section class="grid" aria-labelledby="h-ep"><h2 id="h-ep">Epics</h2><ul class="epics">${renderEpics(epics, escape)}</ul></section>${renderBlockers(epics, escape)}${renderNeedsBlocker(epics, escape)}`;
 mkdirSync(out, { recursive: true });
 for (const asset of ['tokens.css', 'style.css', 'blockers.css', 'fonts', 'people-freshness.mjs', 'live-counts.mjs', 'people-at-work.mjs', 'fleet-counts.mjs']) cpSync(fileURLToPath(new URL(asset, import.meta.url)), join(out, asset), { recursive: true });
 writeFileSync(join(out, 'CNAME'), 'roadmap.slipgates.com\n');

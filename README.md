@@ -28,6 +28,10 @@ Only agent-bridge children contribute; cross-repository sub-issues are excluded.
 Epic badges name the first recorded cause and expand to every blocked child,
 its full blocker reason and clearing role. Label-only blocks say No blocker
 recorded and appear in Needs a blocker; private causes have no public issue link.
+The standalone Blockers card lists only public numbered causes with known clearing
+roles. Unknown/private causes and missing roles stay in existing epic details.
+If all blocked entries are filtered it says No named blockers; only a valid clear
+list says No blockers. The Needs a blocker panel is unchanged.
 
 Pages runs D1 (including D4 statistics) with its read-only token in the separate,
 continue-on-error data job; only `roadmap.json` reaches the token-free static build.
