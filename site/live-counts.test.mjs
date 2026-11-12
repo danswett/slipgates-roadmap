@@ -45,6 +45,49 @@ test('fresh fleet data cannot hide the public source age of old HTML', async () 
   assert.match(merged.innerHTML, /agent-bridge Update time unavailable/);
 });
 
+test('persisted pageshow rereads both public files but an ordinary pageshow does not', async (t) => {
+  const root = { ...page(), addEventListener() {} }, listeners = new Map(), calls = [];
+  const globals = ['document', 'addEventListener'].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]);
+  t.after(() => globals.forEach(([key, descriptor]) => descriptor
+    ? Object.defineProperty(globalThis, key, descriptor) : Reflect.deleteProperty(globalThis, key)));
+  globalThis.document = root;
+  globalThis.addEventListener = (name, listener) => listeners.set(name, listener);
+  t.mock.method(globalThis, 'setInterval', () => 0);
+  t.mock.method(globalThis, 'fetch', async (url) => { calls.push(url); return request()(url); });
+  await import('./live-counts.mjs?persisted-pageshow-test');
+  await new Promise(setImmediate);
+  assert.ok(Object.values(root.targets).every(target => target.dataset.liveState === 'ready'));
+  calls.length = 0;
+  listeners.get('pageshow')({ persisted: false });
+  assert.deepEqual(calls, []);
+  listeners.get('pageshow')({ persisted: true });
+  await new Promise(setImmediate);
+  assert.deepEqual(calls.sort(), [`${source}fleet-counts.json`, `${source}people-at-work.json`]);
+  assert.ok(Object.values(root.targets).every(target => target.dataset.liveState === 'ready'));
+});
+
+test('blocked fleet rereads reset baked merged totals to public-only and show fleet unavailable', async (t) => {
+  t.mock.method(console, 'error', () => {});
+  const generatedAt = new Date(Date.now() - 10800000).toISOString();
+  const merged = { dataset: { total: '100', recent: '17', generatedAt }, innerHTML: '' }, root = page(merged);
+  await refreshLiveCounts(root, request());
+  const baked = merged.innerHTML;
+  assert.match(baked, /class="stat num">199<\/div>/);
+  const reload = page({ dataset: merged.dataset, innerHTML: baked });
+  const target = reload.querySelector('[data-live-merged]');
+  await refreshLiveCounts(reload, async url => {
+    if (url.endsWith('fleet-counts.json')) throw new Error('blocked');
+    return request()(url);
+  });
+  assert.match(target.innerHTML, /class="stat num">100<\/div>/);
+  assert.match(target.innerHTML, /17 in the last 24 h; agent-bridge only/);
+  assert.ok(target.innerHTML.includes(generatedAt));
+  assert.doesNotMatch(target.innerHTML, />199<\/div>|slipgates-fleet Updated at/);
+  assert.match(reload.targets.fleet.innerHTML, /unavailable/i);
+  assert.equal(reload.targets.fleet.dataset.liveState, 'unavailable');
+  assert.match(reload.targets.people.innerHTML, />7<\/div>/);
+});
+
 test('invalid, blocked and oversized data cannot retain a last good value or leak rejected text', async (t) => {
   const logs = []; t.mock.method(console, 'error', (line) => logs.push(line));
   const marker = 'PRIVATE_VIEW_CANARY', valid = JSON.stringify(people());
