@@ -1,10 +1,11 @@
 import { readFileSync, mkdirSync, writeFileSync, cpSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readFleetCounts, renderFleetCounts } from './fleet-counts.mjs';
+import { renderFleetCounts, renderMergedCounts } from './fleet-counts.mjs';
 import { renderEpics, renderNeedsBlocker, validEpicDetails } from './epics.mjs';
 import { renderCharts } from './charts.mjs';
-import { readPeopleCounts, renderPeopleCounts } from './people-at-work.mjs';
+import { renderPeopleCounts } from './people-at-work.mjs';
+import { readPeopleCounts, readFleetCounts } from './counts-files.mjs';
 
 const [data = 'data/roadmap.json', out = '_site', fleet = 'data/fleet-counts.json', people = 'data/people-at-work.json'] = process.argv.slice(2);
 let value, reason = '';
@@ -46,13 +47,8 @@ const epics = reason ? [] : value.epics.filter((e) => !e.repository || e.reposit
 const done = epics.reduce((n, e) => n + e.closed, 0), total = epics.reduce((n, e) => n + e.closed + e.open, 0);
 const tile = (title, body) => `<div class="card"><h2>${title}</h2>${body}</div>`;
 const number = (n) => { const result = count(n); return `<div class="${typeof result === 'number' ? 'stat num' : 'none'}">${result}</div>`; };
-const mergedTile = () => {
-  const all = count(stats?.prsMergedTotal), combined = typeof all === 'number' && fleetCounts?.prsMergedTotal !== undefined;
-  const recent = count(stats?.merges?.last_24_hours);
-  const detail = `<div class="sub">${typeof recent === 'number' && combined ? count(recent + fleetCounts.prsMerged24h) : recent} in the last 24 h${typeof all === 'number' && !combined ? '; agent-bridge only' : ''}</div>`;
-  return typeof all === 'number' ? number(all + (combined ? fleetCounts.prsMergedTotal : 0)) + detail : detail + '<div class="none">Data unavailable</div>';
-};
-const peopleTile = () => renderPeopleCounts(readPeopleCounts(people));
+const mergedTile = () => `<div data-live-merged data-total="${count(stats?.prsMergedTotal)}" data-recent="${count(stats?.merges?.last_24_hours)}" data-generated-at="${escape(timestamp)}">${renderMergedCounts(stats?.prsMergedTotal, stats?.merges?.last_24_hours, fleetCounts, timestamp)}</div>`;
+const peopleTile = () => `<div data-live-counts="people">${renderPeopleCounts(readPeopleCounts(people))}</div>`;
 const time = `<time datetime="${escape(timestamp)}">${escape(updated)}</time>`, stale = Date.now() - Date.parse(timestamp) > 15 * 60000;
 const stamp = `<span class="stamp${reason ? ' stale' : ''}">${reason ? warn : clock}<span>${stale ? 'Out of date. Last update ' : reason ? 'Data unavailable. ' : 'Updated '}${time}</span></span>`;
 const content = reason
@@ -65,13 +61,13 @@ ${tile('Issues resolved', `<div class="stat num">${count(issues?.resolved)}<smal
 ${tile('People at work', peopleTile())}</div>${renderCharts(stats)}
 <section class="grid" aria-labelledby="h-ep"><h2 id="h-ep">Epics</h2><ul class="epics">${renderEpics(epics, escape)}</ul></section>${renderNeedsBlocker(epics, escape)}`;
 mkdirSync(out, { recursive: true });
-for (const asset of ['tokens.css', 'style.css', 'blockers.css', 'fonts', 'people-freshness.mjs']) cpSync(fileURLToPath(new URL(asset, import.meta.url)), join(out, asset), { recursive: true });
+for (const asset of ['tokens.css', 'style.css', 'blockers.css', 'fonts', 'people-freshness.mjs', 'live-counts.mjs', 'people-at-work.mjs', 'fleet-counts.mjs']) cpSync(fileURLToPath(new URL(asset, import.meta.url)), join(out, asset), { recursive: true });
 writeFileSync(join(out, 'CNAME'), 'roadmap.slipgates.com\n');
 writeFileSync(join(out, 'index.html'), `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; connect-src https://raw.githubusercontent.com/danswett/slipgates-roadmap/fleet-counts/; style-src 'self' 'unsafe-inline'; font-src 'self'; base-uri 'none'; form-action 'none'">
 <title>Slipgates roadmap</title><meta name="color-scheme" content="light dark"><link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="blockers.css">
 </head><body><div class="wrap"><header class="top"><a class="lockup" href="./">${mark}<span>Slipgates</span><span class="sep" aria-hidden="true">/</span><span>Roadmap</span></a>${stamp}</header><main>
-${content}${renderFleetCounts(fleetCounts)}
-</main><footer><span>Public data from github.com/danswett/agent-bridge; private slipgates-fleet epics are not included.</span><span>No cookies, no trackers, no outside requests.</span></footer></div><script type="module" src="people-freshness.mjs"></script></body></html>
+${content}<div data-live-counts="fleet">${renderFleetCounts(fleetCounts)}</div>
+</main><footer><span>Public data from github.com/danswett/agent-bridge; private slipgates-fleet epics are not included.</span><span>No cookies or trackers. Counts read from public GitHub.</span></footer></div><script type="module" src="live-counts.mjs"></script></body></html>
 `);

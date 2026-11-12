@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { readPeopleCounts } from './people-at-work.mjs';
+import { readPeopleCounts } from './counts-files.mjs';
 
 const now = Date.parse('2026-11-11T16:00:00Z');
 const sample = (at = now) => ({ schema: 1, generatedAt: new Date(at).toISOString(), builders: 3, reviewers: 2 });

@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-
 const bins = (prefix, size) => Array.from({ length: size }, (_, i) => `${prefix}${String(i).padStart(2, '0')}`);
 const hours = bins('mergeHour', 24), days = bins('mergeDay', 14);
 const keys = ['schema', 'generatedAt', 'issuesOpen', 'issuesResolved', 'commits',
@@ -10,13 +8,7 @@ const unavailable = (reason) => {
   return undefined;
 };
 
-export function readFleetCounts(path) {
-  let value;
-  try { value = JSON.parse(readFileSync(path, 'utf8')); }
-  catch (error) {
-    if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error;
-    return unavailable('missing or invalid file');
-  }
+export function validateFleetCounts(value, now = Date.now(), maxAge = 7200000) {
   const allowed = Object.hasOwn(value ?? {}, 'prsMergedTotal') ? [...keys, 'prsMergedTotal'] : keys;
   if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length !== allowed.length ||
     allowed.some((key) => !Object.hasOwn(value, key)) || value.schema !== 1 ||
@@ -24,16 +16,33 @@ export function readFleetCounts(path) {
       (!Number.isInteger(value[key]) || value[key] < 0 || value[key] > 100000000)))
     return unavailable('invalid schema');
   const at = typeof value.generatedAt === 'string' ? Date.parse(value.generatedAt) : NaN;
-  const age = Date.now() - at;
+  const age = now - at;
   if (typeof value.generatedAt !== 'string' ||
     !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,9})?(?:Z|\+00:00)$/.test(value.generatedAt) ||
     !Number.isFinite(at) || new Date(at).toISOString().slice(0, 19) !== value.generatedAt.slice(0, 19) ||
-    age < -60000 || age > 7200000)
+    age < -60000 || age > maxAge)
     return unavailable('invalid or stale timestamp');
   const sum = (fields) => fields.reduce((total, key) => total + value[key], 0);
   if (value.prsMerged24h !== sum(hours) || value.prsMerged14d !== sum(days))
     return unavailable('inconsistent bin totals');
   return value;
+}
+
+const stamp = (value, label = '') => {
+  if (typeof value.generatedAt !== 'string' || !Number.isFinite(Date.parse(value.generatedAt)))
+    return `<div class="sub">${label}Update time unavailable</div>`;
+  const timestamp = value.generatedAt.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+  return `<div class="sub">${label}Updated at <time data-people-generated-at datetime="${timestamp}">${timestamp}</time> (UTC)
+<span class="people-stale" data-people-stale role="status">Stale</span></div>`;
+};
+
+export function renderMergedCounts(total, recent, fleet, publicGeneratedAt) {
+  const count = (n) => Number.isSafeInteger(n) && n >= 0 ? n : 'Data unavailable';
+  const all = count(total), last = count(recent), combined = typeof all === 'number' && fleet?.prsMergedTotal !== undefined;
+  const detail = `<div class="sub">${typeof last === 'number' && combined ? count(last + fleet.prsMerged24h) : last} in the last 24 h${typeof all === 'number' && !combined ? '; agent-bridge only' : ''}</div>`;
+  const sources = stamp({ generatedAt: publicGeneratedAt }, 'agent-bridge ') + (combined ? stamp(fleet, 'slipgates-fleet ') : '');
+  return typeof all === 'number' ? `<div class="stat num">${count(all + (combined ? fleet.prsMergedTotal : 0))}</div>${detail}${sources}`
+    : detail + '<div class="none">Data unavailable</div>';
 }
 
 export function renderFleetCounts(value) {
@@ -48,5 +57,5 @@ export function renderFleetCounts(value) {
   return panel(`<p>Issues open: ${value.issuesOpen}; resolved: ${value.issuesResolved}; commits: ${value.commits}</p>
 <p>Merged: ${value.prsMerged24h} in 24 hours; ${value.prsMerged14d} in 14 days</p>
 ${table(hours, 'hour', 3600000)}${table(days, 'day', 86400000)}
-<p>Generated at <time datetime="${value.generatedAt}">${value.generatedAt}</time> (UTC)</p>`);
+${stamp(value)}`);
 }

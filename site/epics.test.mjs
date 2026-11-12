@@ -45,7 +45,7 @@ test('every public epic has progress, child counts, PRs and blockers in D1 roadm
   for (const number of [803, 908])
     assert.match(html, new RegExp(`href="https://github.com/danswett/agent-bridge/issues/${number}"`));
   assert.match(html, /&lt;script&gt;Trust &amp; &quot;safety&quot;&lt;\/script&gt;/);
-  assert.doesNotMatch(html.replace('<script type="module" src="people-freshness.mjs"></script>', ''),
+  assert.doesNotMatch(html.replace('<script type="module" src="live-counts.mjs"></script>', ''),
     /PRIVATE_SENTINEL|#997|<script\b|(?:src|href)="(?:https?:)?\/\/(?!github\.com\/danswett\/agent-bridge\/issues\/)/i);
 });
 
@@ -63,7 +63,7 @@ test('one blocker names the cause and opens a full escaped child, blocker and ro
   assert.match(html, /class="child".*issues\/1927.*Child &lt;reply&gt;/s);
   assert.match(html, /class="by".*issues\/1925.*&lt;Reply &amp; restart&gt;/s);
   assert.match(html, /Clears it: <b>Engineering<\/b>/);
-  assert.doesNotMatch(html.replace('<script type="module" src="people-freshness.mjs"></script>', ''),
+  assert.doesNotMatch(html.replace('<script type="module" src="live-counts.mjs"></script>', ''),
     /Needs a blocker|class="more"|<script\b|<reply>/);
   assert.doesNotMatch(html.match(/<li class="card epic[\s\S]*?<\/section>/)?.[0], /Data unavailable/);
 });

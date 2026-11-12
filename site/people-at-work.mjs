@@ -1,13 +1,5 @@
-import { readFileSync } from 'node:fs';
-
-export function readPeopleCounts(path, now = Date.now()) {
+export function validatePeopleCounts(value, now = Date.now(), maxAge = 900000) {
   const unavailable = () => { console.error('People counts unavailable: missing, invalid or stale file.'); };
-  let value;
-  try { value = JSON.parse(readFileSync(path, 'utf8')); }
-  catch (error) {
-    if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error;
-    return unavailable();
-  }
   const keys = ['schema', 'generatedAt', 'builders', 'reviewers'];
   if (!value || typeof value !== 'object' || Array.isArray(value) ||
     Object.keys(value).length !== keys.length || keys.some((key) => !Object.hasOwn(value, key)) ||
@@ -18,7 +10,7 @@ export function readPeopleCounts(path, now = Date.now()) {
   if (typeof value.generatedAt !== 'string' ||
     !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,9})?(?:Z|\+00:00)$/.test(value.generatedAt) ||
     !Number.isFinite(at) || new Date(at).toISOString().slice(0, 19) !== value.generatedAt.slice(0, 19) ||
-    now - at < -60000 || now - at > 900000)
+    now - at < -60000 || now - at > maxAge)
     return unavailable();
   return value;
 }
