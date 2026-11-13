@@ -1,4 +1,4 @@
-/* Approved roadmap board; blocker details and theme variants follow separately. */
+/* Approved roadmap board, using the shared app tokens and system preferences. */
 *,*::before,*::after{box-sizing:border-box}
 html{color-scheme:light dark;font-synthesis:none;-webkit-text-size-adjust:100%}
 body{margin:0;min-height:100vh;background:var(--ab-shell);color:var(--ab-text);font:400 16px/1.5 var(--ab-font-sans);background-image:radial-gradient(60rem 28rem at 85% -8rem,color-mix(in srgb,var(--ab-bridge) 14%,transparent),transparent 70%);background-repeat:no-repeat}
@@ -17,7 +17,7 @@ h1{margin:0;font-size:clamp(1.75rem,4.5vw,2.75rem);line-height:1.1;font-weight:6
 .hero-bar{margin-top:24px;display:grid;gap:8px}.hero-bar .row{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
 .big{font-size:clamp(2.5rem,8vw,4rem);line-height:1;font-weight:600}.lbl{color:var(--ab-text2)}
 .bar{height:12px;border-radius:var(--ab-radius-pill);background:var(--ab-subtle);box-shadow:inset 0 0 0 1px var(--ab-stroke);overflow:hidden}
-.bar i{display:block;height:100%;width:var(--p);border-radius:inherit;background:linear-gradient(90deg,color-mix(in srgb,var(--ab-bridge) 70%,transparent),var(--ab-bridge));animation:grow .9s cubic-bezier(.2,.7,.2,1) both}
+.bar i{display:block;height:100%;width:var(--p);border-radius:inherit;background:linear-gradient(90deg,color-mix(in srgb,var(--ab-bridge) 85%,transparent),var(--ab-bridge));animation:grow .9s cubic-bezier(.2,.7,.2,1) both}
 .bar.sm{height:8px}.tiles .bar{margin-top:8px}@keyframes grow{from{width:0}}
 .grid{display:grid;gap:16px;margin-top:24px}.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
 .card{min-width:0;background:var(--ab-card);border:1px solid var(--ab-stroke2);border-radius:var(--ab-radius-card);padding:16px;overflow-wrap:anywhere}
@@ -42,7 +42,7 @@ footer{margin-top:40px;color:var(--ab-text3);font-size:.8125rem;display:flex;fle
 .spark .line{fill:none;stroke:currentColor;stroke-width:2;stroke-linejoin:round;stroke-linecap:round;stroke-dasharray:1;animation:draw 1.2s ease-out both}
 .spark .axis{stroke:var(--ab-stroke2)}@keyframes draw{from{stroke-dashoffset:1}}
 .bars{display:flex;align-items:flex-end;gap:4px;height:96px;margin-top:12px}
-.bars i{flex:1;min-width:0;height:var(--h);background:color-mix(in srgb,var(--ab-bridge) 45%,transparent);border-radius:var(--ab-radius-control) var(--ab-radius-control) 0 0;animation:rise .7s ease-out both}
+.bars i{flex:1;min-width:0;height:var(--h);background:color-mix(in srgb,var(--ab-bridge) 75%,transparent);border-radius:var(--ab-radius-control) var(--ab-radius-control) 0 0;animation:rise .7s ease-out both}
 .bars i:last-child{background:var(--ab-bridge)}@keyframes rise{from{height:0}}
 .axis-l{display:flex;justify-content:space-between;color:var(--ab-text3);font-size:.75rem}
 .charts details{margin-top:12px;color:var(--ab-text2);font-size:.875rem}.charts summary{cursor:pointer;min-height:44px;display:list-item;padding:12px 0}
@@ -52,6 +52,15 @@ footer{margin-top:40px;color:var(--ab-text3);font-size:.8125rem;display:flex;fle
 @media(min-width:60rem){.charts{grid-template-columns:minmax(0,3fr) minmax(0,2fr)}}
 @media(min-width:48rem){.wrap{padding:0 32px 64px}.people{gap:24px}}
 @media(min-width:900px){.tiles{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media(prefers-contrast:more){
+  :root{--ab-text2:var(--ab-text);--ab-text3:var(--ab-text);--ab-stroke:var(--ab-text);--ab-stroke2:var(--ab-text);--ab-needs:var(--ab-text);--ab-needs-text:var(--ab-text);--ab-needs-head:var(--ab-text)}
+  body{background-image:none}
+}
 @media(prefers-reduced-motion:reduce){.bar i,.bars i,.spark .line{animation:none}}
 @media(forced-colors:active){.bar{border:1px solid CanvasText;box-shadow:none}.bar i{background:Highlight}.card{border-color:CanvasText}}
 @media(forced-colors:active){.spark .line{stroke:Highlight}.spark .dot{fill:Highlight}.spark .area{fill:none}.bars i{background:GrayText;forced-color-adjust:none}.bars i:last-child{background:Highlight}}
+@media(forced-colors:active){
+  body{background-image:none}
+  .bar i,.spark .line,.spark .dot{forced-color-adjust:none}
+  .epic.is-blocked .bar i{background:GrayText}
+}

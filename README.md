@@ -83,6 +83,13 @@ Tokens and self-hosted fonts are the approved agent-bridge brand assets (OFL in
 Chart cards use the latest 24 hourly merges and 14 Pacific daily merge buckets,
 with native tables, a current-hour dot, highlighted today, median merge and main CI times.
 Missing or invalid chart fields show Data unavailable independently, never invented zeroes.
+System light/dark, increased contrast and Windows forced colours retain readable
+text, chart marks, progress fills and keyboard focus. Increased contrast promotes
+secondary text and boundaries to the primary ink; reduced motion stops chart/bar
+animations and the blocker disclosure transition. Bars and progress gradients use
+stronger Bridge tints to meet 3:1 contrast without replacing the approved brand tokens.
+`node --test` includes the rendered theme checks using installed Edge on Windows
+or Google Chrome on Linux (`ROADMAP_BROWSER` overrides the executable).
 Run `node --test --test-concurrency=1 site/designed.browser.mjs` for 390/820/1180/1376px
 rendered checks with installed Edge, or set `ROADMAP_BROWSER` to a Chromium binary.
 `ROADMAP_SCREENSHOTS` saves the checked states; no browser-test dependency is needed.
