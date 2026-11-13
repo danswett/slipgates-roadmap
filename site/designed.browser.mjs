@@ -31,7 +31,7 @@ test('designed roadmap renders on phone and desktop without outside requests', {
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const origin = `http://127.0.0.1:${server.address().port}`;
-  const browser = spawn(process.env.ROADMAP_BROWSER ?? 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+  const browser = spawn(process.env.ROADMAP_BROWSER ?? (process.platform === 'win32' ? 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe' : 'google-chrome'),
     ['--headless=new', '--disable-gpu', '--no-first-run', '--remote-debugging-port=0', `--user-data-dir=${join(dir, 'profile')}`], { stdio: ['ignore', 'ignore', 'pipe'] });
   let socket, sequence = 0;
   const send = (method, params = {}) => new Promise((resolve, reject) => { const id = ++sequence; pending.set(id, { resolve, reject }); socket.send(JSON.stringify({ id, method, params })); });
@@ -153,10 +153,34 @@ test('designed roadmap renders on phone and desktop without outside requests', {
           assert.equal(await evaluate("document.documentElement.scrollWidth > innerWidth"), false);
           assert.equal(await evaluate("[...document.querySelectorAll('.charts summary')].every(e => e.getBoundingClientRect().height >= 44)"), true);
           assert.equal(await evaluate("[...document.querySelectorAll('.charts .line,.charts .bars i')].every(e => getComputedStyle(e).animationName === 'none')"), true);
-          for (const mode of ['light', 'contrast']) {
-            await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }, { name: 'forced-colors', value: mode === 'contrast' ? 'active' : 'none' }, { name: 'prefers-reduced-motion', value: 'reduce' }] });
+          for (const mode of ['light', 'dark', 'light-more', 'dark-more', 'contrast', 'dark-contrast']) {
+            const forced = mode.includes('contrast'), more = mode.endsWith('-more');
+            await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: mode.startsWith('dark') ? 'dark' : 'light' }, { name: 'forced-colors', value: forced ? 'active' : 'none' }, { name: 'prefers-contrast', value: more ? 'more' : 'no-preference' }, { name: 'prefers-reduced-motion', value: 'reduce' }] });
             assert.equal(await evaluate("document.documentElement.scrollWidth > innerWidth || [...document.querySelectorAll('.charts h2,.charts h3,.charts .stat,.charts summary,.charts th,.charts td')].some(e => e.scrollWidth > e.clientWidth + 1)"), false);
-            if (mode === 'contrast') assert.equal(await evaluate("getComputedStyle(document.querySelector('.spark .area')).fill"), 'none');
+            const contrast = await evaluate(`(() => {
+              const context = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+              const rgba = color => { context.clearRect(0, 0, 1, 1); context.fillStyle = color; context.fillRect(0, 0, 1, 1); const p = [...context.getImageData(0, 0, 1, 1).data]; return [...p.slice(0, 3), p[3] / 255]; };
+              const over = (front, back) => front.slice(0, 3).map((v, i) => v * front[3] + back[i] * (1 - front[3]));
+              const background = element => { const chain = []; for (let e = element; e; e = e.parentElement) chain.unshift(e); return chain.reduce((bg, e) => over(rgba(getComputedStyle(e).backgroundColor), bg), [255, 255, 255]); };
+              const luminance = rgb => rgb.map(v => v / 255).map(v => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4).reduce((sum, v, i) => sum + v * [.2126, .7152, .0722][i], 0);
+              const ratio = (a, b) => { const x = luminance(a), y = luminance(b); return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); };
+              const text = [...document.querySelectorAll('.stamp,.lede,.lbl,.card h2,.sub,.none,.epic h3,.epic .id,.meta,.blk summary,.blk .more,.blk-list .by,.blk-list .who,.need p,.need h2,footer,.axis-l,.charts th,.charts td,.charts caption,.metrics h3')]
+                .filter(e => e.getClientRects().length && e.textContent.trim()).map(e => { const bg = background(e); return { label: e.className || e.tagName, ratio: ratio(over(rgba(getComputedStyle(e).color), bg), bg) }; });
+              const bars = [...document.querySelectorAll('.bars i')].map(e => ({ label: 'daily bar', ratio: ratio(background(e), background(e.parentElement)) }));
+              const progress = [...document.querySelectorAll('.bar i')].map(e => ({ label: 'progress fill', ratio: ratio(background(e), background(e.parentElement)) }));
+              document.querySelector('.charts summary').focus();
+              const focused = document.activeElement, focusStyle = getComputedStyle(focused), bg = background(focused);
+              const focus = { width: focusStyle.outlineWidth, style: focusStyle.outlineStyle, ratio: ratio(over(rgba(focusStyle.outlineColor), bg), bg) };
+              const borders = [...document.querySelectorAll('.card,.need')].map(e => ({ label: e.className, ratio: ratio(over(rgba(getComputedStyle(e).borderTopColor), background(e)), background(e)) }));
+              return { text, bars, progress, focus, borders, motion: [...document.querySelectorAll('.bar i,.bars i,.spark .line')].every(e => getComputedStyle(e).animationName === 'none') && getComputedStyle(document.querySelector('.blk .chev')).transitionDuration === '0s' };
+            })()`);
+            for (const item of contrast.text) assert.ok(item.ratio >= (more ? 7 : 4.5), `${width}-${mode}: ${item.label} text contrast ${item.ratio}`);
+            for (const item of [...contrast.bars, ...(forced ? contrast.progress : []), ...(more ? contrast.borders : [])])
+              assert.ok(item.ratio >= 3, `${width}-${mode}: ${item.label} contrast ${item.ratio}`);
+            assert.equal(contrast.focus.width, '2px'); assert.equal(contrast.focus.style, 'solid');
+            assert.ok(contrast.focus.ratio >= 3, `${width}-${mode}: focus contrast ${contrast.focus.ratio}`);
+            assert.equal(contrast.motion, true, `${width}-${mode}: reduced motion`);
+            if (forced) assert.equal(await evaluate("getComputedStyle(document.querySelector('.spark .area')).fill"), 'none');
             if (process.env.ROADMAP_SCREENSHOTS) { mkdirSync(process.env.ROADMAP_SCREENSHOTS, { recursive: true }); writeFileSync(join(process.env.ROADMAP_SCREENSHOTS, `${width}-${mode}.png`), Buffer.from((await send('Page.captureScreenshot', { captureBeyondViewport: true })).data, 'base64')); }
           }
           await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }, { name: 'forced-colors', value: 'none' }, { name: 'prefers-reduced-motion', value: 'reduce' }] });
