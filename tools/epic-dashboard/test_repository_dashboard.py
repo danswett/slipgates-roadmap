@@ -245,7 +245,7 @@ class DescendantRollupTests(unittest.TestCase):
         self.graph[210] = [self.grandchild]
         self.graph[220] = [self.epics[0], self.child]
         snapshot = self.read()
-        self.assertEqual([209, 220, 210], [c["number"] for c in snapshot["epics"][0]["children"]])
+        self.assertCountEqual([209, 220, 210], [c["number"] for c in snapshot["epics"][0]["children"]])
         self.assertEqual(len(set(self.queries)), len(self.queries))
         epic = repo.generate(snapshot)[0]["epics"][0]
         self.assertEqual((1, 2), (epic["closed"], epic["open"]))

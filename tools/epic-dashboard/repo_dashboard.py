@@ -17,6 +17,7 @@ PAGE = "pageInfo{hasNextPage endCursor} nodes"
 ROOT = 'repository(owner:"danswett",name:"agent-bridge")'
 REFERENCE = re.compile(r"(?:(?:https://github\.com/)?([\w.-]+/[\w.-]+)(?:/issues/|#)|#)(\d+)")
 ROLES = {"Engineering", "Quality", "Product", "SRE", "Creative", "Migration", "Owner"}
+MAX_SUB_ISSUE_DEPTH = 3
 
 
 def body_blockers(issue):
@@ -78,6 +79,9 @@ def nodes(query, path):
         for key in path:
             connection = connection[key]
         result.extend(connection["nodes"])
+    if not pages or connection.get("pageInfo", {}).get("hasNextPage"):
+        name = "sub-issues" if path[-1] == "subIssues" else path[-1]
+        raise ValueError(f"Incomplete {name}")
     return result
 
 
@@ -85,13 +89,28 @@ def read():
     epics = nodes(f'query($endCursor:String){{{ROOT}{{issues(first:100,after:$endCursor,'
                   f'labels:["epic"],states:[OPEN,CLOSED]){{{PAGE}{{{FIELDS}}}}}}}}}',
                   ("repository", "issues"))
+    children_by_number = {}
     for epic in epics:
-        epic["children"] = nodes(
-            f'query($endCursor:String){{{ROOT}{{issue(number:{epic["number"]}){{'
-            f'subIssues(first:100,after:$endCursor){{{PAGE}{{{FIELDS} '
-            'closedByPullRequestsReferences(first:100,includeClosedPrs:true){'
-            'pageInfo{hasNextPage} nodes{number state mergedAt repository{nameWithOwner}}}}}}}}',
-            ("repository", "issue", "subIssues"))
+        children, visited = [], {epic["number"]}
+        pending = [(epic["number"], 0)]
+        for number, depth in pending:
+            if number not in children_by_number:
+                children_by_number[number] = nodes(
+                    f'query($endCursor:String){{{ROOT}{{issue(number:{number}){{'
+                    f'subIssues(first:100,after:$endCursor){{{PAGE}{{{FIELDS} '
+                    'closedByPullRequestsReferences(first:100,includeClosedPrs:true){'
+                    'pageInfo{hasNextPage} nodes{number state mergedAt repository{nameWithOwner}}}}}}}}',
+                    ("repository", "issue", "subIssues"))
+            for child in children_by_number[number]:
+                if (child.get("repository", {}).get("nameWithOwner", R) != R or
+                        child["number"] in visited):
+                    continue
+                if depth >= MAX_SUB_ISSUE_DEPTH:
+                    raise ValueError(f"Incomplete sub-issues: maximum depth {MAX_SUB_ISSUE_DEPTH} exceeded")
+                visited.add(child["number"])
+                children.append(child)
+                pending.append((child["number"], depth + 1))
+        epic["children"] = children
     priority = json.loads(run("gh", "api", f"repos/{R}/issues/696"))["body"]
     epics = public_epics(epics)
     issues = [issue for epic in epics for issue in [epic, *epic["children"]]]
