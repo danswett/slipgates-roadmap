@@ -38,6 +38,7 @@ test('live-counts regressions kill the four review mutations by assertion', asyn
       assert.match(output, /ERR_ASSERTION/, `${name}: must fail by assertion\n${output}`);
       assert.doesNotMatch(output, /cancelledByParent|testTimeoutFailure|Promise resolution is still pending/,
         `${name}: must not hang or cancel tests\n${output}`);
+      t.diagnostic(`${name}: exit 1, ERR_ASSERTION\n${output.match(/^not ok .*/gm).join('\n')}`);
     });
   }
 });

@@ -110,15 +110,71 @@ test('invalid, blocked and oversized data cannot retain a last good value or lea
 test('ten-second deadlines abort both reads and leave unavailable rather than a prior value', async (t) => {
   t.mock.method(console, 'error', () => {});
   t.mock.timers.enable({ apis: ['setTimeout'] });
-  const root = page(), signals = [];
+  const root = page(), signals = [], rejects = [];
   const pending = refreshLiveCounts(root, (_url, { signal }) => {
     signals.push(signal);
-    return new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new Error('timeout')), { once: true }));
+    return new Promise((_resolve, reject) => {
+      rejects.push(reject);
+      signal.addEventListener('abort', () => reject(new Error('timeout')), { once: true });
+    });
   });
+  t.after(async () => { rejects.forEach(reject => reject(new Error('cleanup'))); await pending; });
   for (const target of Object.values(root.targets)) assert.doesNotMatch(target.innerHTML, /LAST_GOOD_VALUE/);
-  t.mock.timers.tick(10000); await pending;
-  assert.equal(signals.length, 2); assert.ok(signals.every((signal) => signal.aborted));
+  assert.equal(signals.length, 2);
+  t.mock.timers.tick(9999);
+  assert.ok(signals.every(signal => !signal.aborted), 'neither deadline fires before ten seconds');
+  t.mock.timers.tick(1);
+  assert.ok(signals.every(signal => signal.aborted), 'both reads abort at ten seconds before awaiting completion');
+  await pending;
   for (const target of Object.values(root.targets)) assert.match(target.innerHTML, /unavailable/i);
+});
+
+test('a late error cannot overwrite newer ready counts or log an outage', async (t) => {
+  const logs = []; t.mock.method(console, 'error', line => logs.push(line));
+  const root = page(), rejects = [];
+  const old = refreshLiveCounts(root, () => new Promise((_resolve, reject) => rejects.push(reject)));
+  t.after(async () => { rejects.forEach(reject => reject(new Error('cleanup'))); await old; });
+  await refreshLiveCounts(root, request());
+  const latest = Object.fromEntries(Object.entries(root.targets).map(([kind, target]) => [kind, target.innerHTML]));
+  rejects.forEach(reject => reject(new Error('late error')));
+  await old;
+  for (const [kind, target] of Object.entries(root.targets)) {
+    assert.equal(target.innerHTML, latest[kind], `${kind}: a stale catch must preserve the newer HTML`);
+    assert.equal(target.dataset.liveState, 'ready');
+  }
+  assert.deepEqual(logs, []);
+});
+
+test('starting a newer refresh aborts both previous controllers before either read completes', async (t) => {
+  const root = page(), first = [], second = [], replies = [];
+  const deferred = signals => (url, { signal }) => new Promise((resolve, reject) => {
+    signals.push(signal);
+    replies.push(() => resolve(request()(url)));
+    signal.addEventListener('abort', () => reject(new Error('superseded')), { once: true });
+  });
+  const old = refreshLiveCounts(root, deferred(first));
+  const current = refreshLiveCounts(root, deferred(second));
+  t.after(async () => { replies.forEach(reply => reply()); await Promise.all([old, current]); });
+  assert.equal(first.length, 2); assert.equal(second.length, 2);
+  assert.ok(first.every(signal => signal.aborted), 'both superseded reads must abort immediately');
+  assert.ok(second.every(signal => !signal.aborted), 'the new reads must remain active');
+  replies.forEach(reply => reply());
+  await Promise.all([old, current]);
+  for (const target of Object.values(root.targets)) assert.equal(target.dataset.liveState, 'ready');
+});
+
+test('non-ok responses with valid payloads are unavailable without reading their bodies', async (t) => {
+  t.mock.method(console, 'error', () => {});
+  const root = page(), bodyReads = [];
+  await refreshLiveCounts(root, async url => {
+    const response = await request()(url);
+    return { ok: false, status: 500, get body() { bodyReads.push(url); return response.body; } };
+  });
+  assert.deepEqual(bodyReads, [], 'HTTP errors must be rejected before accessing a valid body');
+  for (const target of Object.values(root.targets)) {
+    assert.match(target.innerHTML, /unavailable/i);
+    assert.equal(target.dataset.liveState, 'unavailable');
+  }
 });
 
 test('a late response from before page resume cannot replace the newer unavailable result', async (t) => {
