@@ -21,7 +21,8 @@ def fixture():
             "createdAt": ago(hours + 24), "mergedAt": ago(hours), "headRefOid": SHA,
             "author": {"login": "bob" if i == 2 else "alice"},
             "timelineItems": {"nodes": [{"createdAt": ago(hours + [2, 4, 12][i]), "label": {"name": "ready"}}]},
-            "comments": {"nodes": [{"body": f"independent-review: CLEAN at {SHA}\nReviewer: Public reviewer, model, Claude"}]},
+            "comments": {"nodes": [{"body": f"independent-review: CLEAN at {SHA}\nReviewer: Public reviewer, model, Claude",
+                                     "authorAssociation": "OWNER"}]},
         } for i, hours in enumerate([1, 3, 10])],
         "commits": {"total": 1234, "nodes": [{"committedDate": ago(1)}, {"committedDate": ago(48)}]},
         "runs": [{"name": "CI", "head_branch": "main", "status": "completed",
@@ -79,11 +80,33 @@ class ThroughputTests(unittest.TestCase):
         source = fixture()
         pr = source["pulls"][0]
         pr["comments"]["nodes"] *= 2
-        pr["comments"]["nodes"].append({"body": f"independent-review-2: CLEAN at {SHA}\nReviewer: Private session, model, OpenAI"})
+        pr["comments"]["nodes"].append({"body": f"independent-review-2: CLEAN at {SHA}\nReviewer: Private session, model, OpenAI",
+                                       "authorAssociation": "COLLABORATOR"})
         source["pulls"] = [pr, dict(pr, headRefOid="b" * 40)]
         data = summarize(source, NOW)
         self.assertEqual(data["reviewers"], {"Claude": 1, "OpenAI": 1})
         self.assertNotIn("Private session", str(data))
+
+    def test_receipts_count_only_trusted_author_associations(self):
+        for association in ("OWNER", "MEMBER", "COLLABORATOR", "NONE",
+                            "FIRST_TIME_CONTRIBUTOR", "CONTRIBUTOR", None, "owner"):
+            with self.subTest(authorAssociation=association):
+                source = fixture()
+                pr = source["pulls"][0]
+                pr["comments"]["nodes"] = [
+                    {"body": f"independent-review{suffix}: CLEAN at {SHA}\nReviewer: Public reviewer, model, {family}",
+                     "authorAssociation": association}
+                    for suffix, family in (("", "Claude"), ("-2", "OpenAI"))
+                ]
+                source["pulls"] = [pr]
+                expected = {"Claude": 1, "OpenAI": 1} if association in ("OWNER", "MEMBER", "COLLABORATOR") else {}
+                self.assertEqual(summarize(source, NOW)["reviewers"], expected)
+
+    def test_receipt_without_author_association_does_not_count(self):
+        source = fixture()
+        for pr in source["pulls"]:
+            del pr["comments"]["nodes"][0]["authorAssociation"]
+        self.assertEqual(summarize(source, NOW)["reviewers"], {})
 
     def test_incomplete_nested_sources_are_not_zero_counts(self):
         source = fixture()
@@ -126,6 +149,7 @@ class ThroughputTests(unittest.TestCase):
                 data = {"issues": {"nodes": [{"closedAt": ago(400 if second else 1), "updatedAt": ago(400 if second else 1)}],
                                    "pageInfo": {"hasNextPage": True, "endCursor": "last" if second else "next"}}}
             elif "pullRequests(first" in query:
+                self.assertIn("authorAssociation", query)
                 data = {"pullRequests": {"nodes": fixture()["pulls"], "pageInfo": page}}
             elif "history(first:0)" in query:
                 data = {"ref": {"target": {"history": {"totalCount": 1234}}}}

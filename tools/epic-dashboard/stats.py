@@ -73,6 +73,8 @@ def summarize(source, now):
             reviews_complete &= bool(comments) and not comments.get("pageInfo", {}).get("hasNextPage", False)
             receipts = set()
             for comment in comments.get("nodes", []):
+                if comment.get("authorAssociation") not in ("OWNER", "MEMBER", "COLLABORATOR"):
+                    continue
                 lines = comment["body"].splitlines()
                 if lines and re.fullmatch(r"independent-review(?:-2)?: CLEAN at " + re.escape(pr["headRefOid"]), lines[0]):
                     receipts.update(re.findall(r"^Reviewer: [^\n]+, (Claude|OpenAI)\s*$", comment["body"], re.M))
@@ -177,7 +179,7 @@ def collect(run, now=None, budget=60):
         load("closed_issues", lambda: pages("issues(first:100,after:CURSOR,states:CLOSED,orderBy:{field:UPDATED_AT,direction:DESC})"
                                           "{nodes{closedAt updatedAt}" + page_info + "}", ("issues",), start - timedelta(days=13)))
         load("pulls", lambda: pages("pullRequests(first:50,after:CURSOR,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{"
-                                  "createdAt updatedAt mergedAt headRefOid author{login} comments(first:100){nodes{body}pageInfo{hasNextPage}}"
+                                  "createdAt updatedAt mergedAt headRefOid author{login} comments(first:100){nodes{body authorAssociation}pageInfo{hasNextPage}}"
                                   "timelineItems(first:100,itemTypes:[LABELED_EVENT]){nodes{... on LabeledEvent{createdAt label{name}}}"
                                   "pageInfo{hasNextPage}}}" + page_info + "}", ("pullRequests",), start - timedelta(days=29)))
 
