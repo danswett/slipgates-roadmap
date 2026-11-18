@@ -253,12 +253,14 @@ class BlockerTests(unittest.TestCase):
         self.child["body"] = "Blocked by #55"
         self.child["labels"]["nodes"] = []
         self.child["state"] = "CLOSED"
+        other = dict(self.child, number=210, title="Another slice", state="OPEN")
         epic = {k: v for k, v in self.epic.items() if k != "children"}
-        with patch.object(repo, "nodes", side_effect=[[epic], [self.child]]), \
+        with patch.object(repo, "nodes", side_effect=[[epic], [self.child, other]]), \
              patch.object(repo, "run", side_effect=[json.dumps({"body": ""}),
                                                     json.dumps({"title": "Roster", "state": "open"})]) as run, \
              patch.object(repo, "collect", return_value={}):
             data = repo.read()
         self.assertEqual(2, run.call_count)
-        self.assertEqual({"750": "OPEN", "209": "CLOSED", "55": "OPEN"}, data["blocker_states"])
+        self.assertEqual({"750": "OPEN", "209": "CLOSED", "210": "OPEN", "55": "OPEN"},
+                         data["blocker_states"])
         self.assertEqual([55], [b["number"] for b in repo.generate(data)[0]["epics"][0]["blockerDetails"]])
