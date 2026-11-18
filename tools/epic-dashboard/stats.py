@@ -99,7 +99,8 @@ def summarize(source, now):
     if "runs" in source:
         durations = [(timestamp(r["updated_at"]) - timestamp(r["run_started_at"])).total_seconds() / 60
                      for r in source["runs"] if r["name"] == "CI" and r["head_branch"] == "main"
-                     and r["status"] == "completed" and r.get("run_started_at")
+                     and r["status"] == "completed" and r.get("conclusion") in ("success", "failure")
+                     and r.get("run_started_at")
                      and timestamp(r["run_started_at"]) <= timestamp(r["updated_at"]) <= now]
         if durations:
             result["ci"] = {"median_minutes": median(durations), "samples": len(durations)}
@@ -193,5 +194,9 @@ def collect(run, now=None, budget=60):
 
         load("commits", commits)
         load("runs", lambda: request(f"repos/{repo}/actions/workflows/ci.yml/runs?branch=main&status=completed&per_page=100")["workflow_runs"])
-        output[repo] = summarize(source, now)
+        try:
+            output[repo] = summarize(source, now)
+        except (ValueError, KeyError, TypeError, AttributeError) as error:
+            output[repo] = {"unavailable": source["unavailable"] + [
+                f"Data unavailable: {repo} summarize: {error}"]}
     return output

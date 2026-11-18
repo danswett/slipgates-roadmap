@@ -25,7 +25,7 @@ def fixture():
                                      "authorAssociation": "OWNER"}]},
         } for i, hours in enumerate([1, 3, 10])],
         "commits": {"total": 1234, "nodes": [{"committedDate": ago(1)}, {"committedDate": ago(48)}]},
-        "runs": [{"name": "CI", "head_branch": "main", "status": "completed",
+        "runs": [{"name": "CI", "head_branch": "main", "status": "completed", "conclusion": "success",
                   "run_started_at": ago(minutes / 60), "updated_at": ago(0)} for minutes in [10, 20, 90]],
     }
 
@@ -65,6 +65,67 @@ class ThroughputTests(unittest.TestCase):
         for pr in source["pulls"]:
             pr["timelineItems"]["nodes"] = []
         self.assertNotIn("ready_to_merge", summarize(source, NOW))
+
+    def test_ci_latency_includes_only_success_and_failure(self):
+        source = fixture()
+        source["runs"] = [
+            dict(source["runs"][0], conclusion=conclusion, run_started_at=ago(minutes / 60))
+            for conclusion, minutes in (("success", 10), ("failure", 30),
+                                       ("cancelled", 120), ("skipped", 240))
+        ]
+        self.assertEqual(summarize(source, NOW)["ci"], {"median_minutes": 20, "samples": 2})
+
+    def test_ci_latency_without_success_or_failure_is_unavailable(self):
+        for conclusions in (("cancelled",), ("cancelled", "skipped"), (None,)):
+            with self.subTest(conclusions=conclusions):
+                source = fixture()
+                source["runs"] = [dict(source["runs"][0], conclusion=value) for value in conclusions]
+                if conclusions == (None,):
+                    del source["runs"][0]["conclusion"]
+                data = summarize(source, NOW)
+                self.assertNotIn("ci", data)
+                self.assertIn("Data unavailable: completed main CI runs", data["unavailable"])
+
+    def test_malformed_summary_is_isolated_to_its_repository(self):
+        repos = ("danswett/agent-bridge", "danswett/slipgates-fleet")
+        malformed = (("closed_issues", [{}]), ("pulls", [None]),
+                     ("commits", {"total": 1234, "nodes": [None]}),
+                     ("closed_issues", [{"closedAt": "invalid-timestamp"}]))
+        for bad_repo in repos:
+            for field, nodes in malformed:
+                with self.subTest(repo=bad_repo, field=field, nodes=nodes):
+                    def run(*args):
+                        repo = repos[0] if 'name:"agent-bridge"' in args[-1] else repos[1]
+                        source = fixture()
+                        if repo == bad_repo:
+                            source[field] = nodes
+                        if args[2] != "graphql":
+                            return json.dumps({"workflow_runs": source["runs"]})
+                        query = args[-1]
+                        page = {"hasNextPage": False, "endCursor": None}
+                        data = {"isPrivate": False}
+                        if "open:issues" in query:
+                            data.update(open={"totalCount": 4}, resolved={"totalCount": 6},
+                                        merged={"totalCount": 3})
+                        elif "issues(first" in query:
+                            data["issues"] = {"nodes": source["closed_issues"], "pageInfo": page}
+                        elif "pullRequests(first" in query:
+                            data["pullRequests"] = {"nodes": source["pulls"], "pageInfo": page}
+                        elif "history(first:0)" in query:
+                            data["ref"] = {"target": {"history": {"totalCount": source["commits"]["total"]}}}
+                        elif "history(first:100" in query:
+                            data["ref"] = {"target": {"history": {"nodes": source["commits"]["nodes"],
+                                                                 "pageInfo": page}}}
+                        return json.dumps({"data": {"repository": data}})
+
+                    data = collect(run, NOW)
+                    self.assertEqual(set(data[bad_repo]), {"unavailable"})
+                    unavailable = "\n".join(data[bad_repo]["unavailable"])
+                    self.assertIn(f"Data unavailable: {bad_repo} summarize:", unavailable)
+                    if field == "closed_issues" and nodes == [{}]:
+                        self.assertIn("closedAt", unavailable)
+                    good_repo = next(repo for repo in repos if repo != bad_repo)
+                    self.assertEqual(data[good_repo], summarize(fixture(), NOW))
 
     def test_empty_and_out_of_window_events(self):
         source = fixture()
