@@ -73,7 +73,9 @@ class BlockerTests(unittest.TestCase):
         self.epic = dict(number=750, title="Reliability", state="OPEN", body="",
                          labels={"nodes": []}, children=[self.child],
                          blockedBy={"nodes": [], "pageInfo": {"hasNextPage": False}})
-        self.snapshot = {"epics": [self.epic], "priority_body": "", "blocker_titles": {"55": "Roster", "12": "Reply"}}
+        self.snapshot = {"epics": [self.epic], "priority_body": "",
+                         "blocker_titles": {"55": "Roster", "12": "Reply"},
+                         "blocker_states": {"55": "OPEN", "12": "OPEN"}}
 
     def generate(self):
         return repo.generate(self.snapshot)[0]
@@ -110,7 +112,8 @@ class BlockerTests(unittest.TestCase):
 
     def test_relation_beats_body_and_private_content_never_leaves_generator(self):
         self.child["body"] = "Blocked by #12: PRIVATE reason\nClears it: Quality"
-        relation = {"number": 55, "title": "Roster", "repository": {"nameWithOwner": repo.R}}
+        relation = {"number": 55, "title": "Roster", "state": "OPEN",
+                    "repository": {"nameWithOwner": repo.R}}
         self.child["blockedBy"]["nodes"] = [relation]
         self.assertEqual([dict(number=55, title="Roster", reason="Roster", clearsIt="Quality")],
                          self.generate()["epics"][0]["blockerDetails"])
@@ -147,6 +150,75 @@ class BlockerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Incomplete blocker relations"):
             self.generate()
 
+    def test_closed_relation_blockers_do_not_block_children_or_epics(self):
+        self.child["labels"]["nodes"] = []
+        for issue in (self.child, self.epic):
+            for state in ("CLOSED", "MERGED"):
+                with self.subTest(issue=issue["number"], state=state):
+                    issue["blockedBy"]["nodes"] = [
+                        dict(number=55, title="Roster", state=state,
+                             repository={"nameWithOwner": repo.R})]
+                    epic = self.generate()["epics"][0]
+                    self.assertFalse(epic["blocked"])
+                    self.assertEqual([], epic["blockerDetails"])
+                    self.assertEqual([], epic["blockedChildren"])
+
+    def test_body_blockers_keep_only_open_references_and_their_reasons(self):
+        self.child["body"] = "Blocked by #55: finished roster\nBlocked by #12: waiting on reply"
+        for state in ("CLOSED", "MERGED"):
+            with self.subTest(state=state):
+                self.snapshot["blocker_states"]["55"] = state
+                epic = self.generate()["epics"][0]
+                expected = [dict(number=12, title="Reply", reason="waiting on reply", clearsIt="Unassigned")]
+                self.assertEqual(expected, epic["blockerDetails"])
+                self.assertEqual(expected, epic["blockedChildren"][0]["blockers"])
+                self.assertEqual([209], epic["blockers"])
+
+    def test_mixed_relation_blockers_preserve_open_reasons(self):
+        self.child["body"] = "Blocked by #55: finished roster\nBlocked by #12: waiting on reply"
+        self.child["blockedBy"]["nodes"] = [
+            dict(number=55, title="Roster", state="CLOSED", repository={"nameWithOwner": repo.R}),
+            dict(number=12, title="Reply", state="OPEN", repository={"nameWithOwner": repo.R})]
+        self.assertEqual([dict(number=12, title="Reply", reason="waiting on reply", clearsIt="Unassigned")],
+                         self.generate()["epics"][0]["blockerDetails"])
+
+    def test_all_closed_blockers_preserve_only_explicit_blocked_label(self):
+        self.child["body"] = "Blocked by #55"
+        self.snapshot["blocker_states"]["55"] = "CLOSED"
+        for relation in ([], [dict(number=55, title="Roster", state="CLOSED",
+                                  repository={"nameWithOwner": repo.R})]):
+            self.child["blockedBy"]["nodes"] = relation
+            for label in (None, "blocked", "status:blocked"):
+                with self.subTest(relation=bool(relation), label=label):
+                    self.child["labels"]["nodes"] = [{"name": label}] if label else []
+                    data = self.generate()
+                    epic = data["epics"][0]
+                    self.assertEqual(bool(label), epic["blocked"])
+                    self.assertEqual([209] if label else [], epic["blockers"])
+                    self.assertEqual([None] if label else [],
+                                     [b["number"] for b in epic["blockerDetails"]])
+                    self.assertEqual(1 if label else 0, len(data["needsBlocker"]))
+                    if label:
+                        self.assertEqual("No blocker recorded", epic["blockerDetails"][0]["title"])
+
+    def test_closed_relations_do_not_fall_back_to_open_body_references(self):
+        self.child["labels"]["nodes"] = []
+        self.child["body"] = "Blocked by #12"
+        self.child["blockedBy"]["nodes"] = [
+            dict(number=55, title="Roster", state="CLOSED", repository={"nameWithOwner": repo.R})]
+        self.assertFalse(self.generate()["epics"][0]["blocked"])
+
+    def test_unknown_blocker_states_fail_visibly(self):
+        self.child["body"] = "Blocked by #55"
+        for state in ("UNKNOWN", None):
+            self.snapshot["blocker_states"]["55"] = state
+            for relation in ([], [dict(number=55, title="Roster", state=state,
+                                      repository={"nameWithOwner": repo.R})]):
+                with self.subTest(state=state, relation=bool(relation)):
+                    self.child["blockedBy"]["nodes"] = relation
+                    with self.assertRaisesRegex(ValueError, "Unknown blocker state"):
+                        self.generate()
+
     def test_private_sub_issue_cannot_publish_its_title_or_body(self):
         self.child.update(title="PRIVATE child", body="Blocked by #55: PRIVATE reason",
                           repository={"nameWithOwner": "danswett/slipgates-fleet"})
@@ -162,12 +234,33 @@ class BlockerTests(unittest.TestCase):
         epic = {k: v for k, v in self.epic.items() if k != "children"}
         with patch.object(repo, "nodes", side_effect=[[epic], [self.child]]) as nodes, \
              patch.object(repo, "run", side_effect=[json.dumps({"body": ""}),
-                                                    json.dumps({"title": "Roster"})]) as run, \
+                                                    json.dumps({"title": "Roster", "state": "closed"})]) as run, \
              patch.object(repo, "collect", return_value={}):
             data = repo.read()
         queries = " ".join(call.args[0] for call in nodes.call_args_list)
         self.assertIn("body", queries)
-        self.assertIn("blockedBy", queries)
+        self.assertIn("nodes{number title state repository", queries)
         self.assertEqual(["repos/danswett/agent-bridge/issues/696", "repos/danswett/agent-bridge/issues/55"],
                          [call.args[2] for call in run.call_args_list])
         self.assertEqual("Roster", data["blocker_titles"]["55"])
+        self.assertEqual("CLOSED", data["blocker_states"]["55"])
+        self.child["labels"]["nodes"] = []
+        self.child["body"] = "Blocked by #55"
+        self.assertFalse(repo.generate(data)[0]["epics"][0]["blocked"])
+
+    def test_read_reuses_known_states_and_fetches_body_reference_once(self):
+        self.epic["body"] = "Blocked by #209, #55"
+        self.child["body"] = "Blocked by #55"
+        self.child["labels"]["nodes"] = []
+        self.child["state"] = "CLOSED"
+        other = dict(self.child, number=210, title="Another slice", state="OPEN")
+        epic = {k: v for k, v in self.epic.items() if k != "children"}
+        with patch.object(repo, "nodes", side_effect=[[epic], [self.child, other]]), \
+             patch.object(repo, "run", side_effect=[json.dumps({"body": ""}),
+                                                    json.dumps({"title": "Roster", "state": "open"})]) as run, \
+             patch.object(repo, "collect", return_value={}):
+            data = repo.read()
+        self.assertEqual(2, run.call_count)
+        self.assertEqual({"750": "OPEN", "209": "CLOSED", "210": "OPEN", "55": "OPEN"},
+                         data["blocker_states"])
+        self.assertEqual([55], [b["number"] for b in repo.generate(data)[0]["epics"][0]["blockerDetails"]])

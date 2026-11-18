@@ -12,7 +12,7 @@ from stats import collect
 R = "danswett/agent-bridge"
 PACIFIC = ZoneInfo("America/Los_Angeles")
 FIELDS = ("number title state body repository{nameWithOwner} labels(first:100){pageInfo{hasNextPage} nodes{name}} "
-          "blockedBy(first:100){pageInfo{hasNextPage} nodes{number title repository{nameWithOwner}}}")
+          "blockedBy(first:100){pageInfo{hasNextPage} nodes{number title state repository{nameWithOwner}}}")
 PAGE = "pageInfo{hasNextPage endCursor} nodes"
 ROOT = 'repository(owner:"danswett",name:"agent-bridge")'
 REFERENCE = re.compile(r"(?:(?:https://github\.com/)?([\w.-]+/[\w.-]+)(?:/issues/|#)|#)(\d+)")
@@ -41,17 +41,25 @@ def public_epics(epics):
             for epic in epics]
 
 
-def blocker_details(issue, titles, labels):
+def blocker_is_open(state):
+    if state not in ("OPEN", "CLOSED", "MERGED"):
+        raise ValueError("Unknown blocker state")
+    return state == "OPEN"
+
+
+def blocker_details(issue, titles, states, labels):
     if issue["state"] != "OPEN":
         return []
     relation = issue.get("blockedBy", {"nodes": []})
     if relation.get("pageInfo", {}).get("hasNextPage"):
         raise ValueError("Incomplete blocker relations")
     declared = body_blockers(issue)
-    sources = [(b["repository"]["nameWithOwner"], b["number"], b["title"]) for b in relation["nodes"]]
-    if not sources:
+    sources = [(b["repository"]["nameWithOwner"], b["number"], b["title"]) for b in relation["nodes"]
+               if blocker_is_open(b.get("state"))]
+    if not relation["nodes"]:
         sources = [(repo, number, titles[str(number)] if repo == R else "private item")
-                   for repo, number in declared]
+                   for repo, number in declared
+                   if repo != R or blocker_is_open(states.get(str(number)))]
     result = []
     for repo, number, title in sources:
         public = repo == R
@@ -97,12 +105,17 @@ def read():
     issues = [issue for epic in epics for issue in [epic, *epic["children"]]]
     titles = {str(issue["number"]): issue["title"] for issue in issues
               if issue.get("repository", {}).get("nameWithOwner", R) == R and "title" in issue}
+    states = {str(issue["number"]): issue["state"] for issue in issues
+              if issue.get("repository", {}).get("nameWithOwner", R) == R}
     for issue in issues:
         if issue["state"] == "OPEN" and not issue["blockedBy"]["nodes"]:
             for repo, number in body_blockers(issue):
-                if repo == R and str(number) not in titles:
-                    titles[str(number)] = json.loads(run("gh", "api", f"repos/{R}/issues/{number}"))["title"]
-    return {"epics": epics, "priority_body": priority, "blocker_titles": titles, "stats": collect(run)}
+                if repo == R and (str(number) not in titles or str(number) not in states):
+                    blocker = json.loads(run("gh", "api", f"repos/{R}/issues/{number}"))
+                    titles[str(number)] = blocker["title"]
+                    states[str(number)] = blocker["state"].upper()
+    return {"epics": epics, "priority_body": priority, "blocker_titles": titles,
+            "blocker_states": states, "stats": collect(run)}
 
 
 def generate(snapshot, now=None):
@@ -121,10 +134,12 @@ def generate(snapshot, now=None):
     rows, needs_blocker = [], []
     for index, epic in enumerate(sorted(epics, key=priority), 1):
         children, prs, buckets = epic["children"], {}, [0] * 24
-        details = blocker_details(epic, snapshot.get("blocker_titles", {}), labels(epic))
+        details = blocker_details(epic, snapshot.get("blocker_titles", {}),
+                                  snapshot.get("blocker_states", {}), labels(epic))
         blocked_children = []
         for child in children:
-            blockers = blocker_details(child, snapshot.get("blocker_titles", {}), labels(child))
+            blockers = blocker_details(child, snapshot.get("blocker_titles", {}),
+                                       snapshot.get("blocker_states", {}), labels(child))
             if blockers:
                 item = dict(number=child["number"], title=child.get("title", ""),
                             blockers=blockers, clearsIt=owner_role(child))
