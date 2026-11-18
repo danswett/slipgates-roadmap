@@ -1,4 +1,5 @@
 import json
+import re
 import tempfile
 import unittest
 from datetime import datetime
@@ -160,7 +161,7 @@ class BlockerTests(unittest.TestCase):
     def test_read_fetches_bodies_relations_and_only_public_fallback_titles(self):
         self.child["body"] = "Blocked by #55 and danswett/slipgates-fleet#313"
         epic = {k: v for k, v in self.epic.items() if k != "children"}
-        with patch.object(repo, "nodes", side_effect=[[epic], [self.child]]) as nodes, \
+        with patch.object(repo, "nodes", side_effect=[[epic], [self.child], []]) as nodes, \
              patch.object(repo, "run", side_effect=[json.dumps({"body": ""}),
                                                     json.dumps({"title": "Roster"})]) as run, \
              patch.object(repo, "collect", return_value={}):
@@ -171,3 +172,128 @@ class BlockerTests(unittest.TestCase):
         self.assertEqual(["repos/danswett/agent-bridge/issues/696", "repos/danswett/agent-bridge/issues/55"],
                          [call.args[2] for call in run.call_args_list])
         self.assertEqual("Roster", data["blocker_titles"]["55"])
+
+
+class DescendantRollupTests(unittest.TestCase):
+    def issue(self, number, state="OPEN", **fields):
+        return dict(number=number, title=f"Slice {number}", state=state, body="",
+                    repository={"nameWithOwner": repo.R},
+                    labels={"nodes": [], "pageInfo": {"hasNextPage": False}},
+                    blockedBy={"nodes": [], "pageInfo": {"hasNextPage": False}},
+                    closedByPullRequestsReferences={"nodes": [], "pageInfo": {"hasNextPage": False}},
+                    **fields)
+
+    def setUp(self):
+        self.epics = [self.issue(750)]
+        self.child, self.grandchild = self.issue(209), self.issue(220, "CLOSED")
+        self.graph = {750: [self.child], 209: [self.grandchild]}
+        self.pages, self.incomplete, self.queries = {}, set(), []
+
+    def read(self):
+        def run(*args):
+            if args[2] != "graphql":
+                return json.dumps({"body": "", "title": "Roster"})
+            self.assertIn("--paginate", args)
+            self.assertIn("--slurp", args)
+            query = args[-1]
+            if 'labels:["epic"]' in query:
+                return json.dumps([{"data": {"repository": {"issues": {
+                    "nodes": self.epics, "pageInfo": {"hasNextPage": False}}}}}])
+            number = int(re.search(r"issue\(number:(\d+)\)", query)[1])
+            self.queries.append(number)
+            pages = self.pages.get(number, [self.graph.get(number, [])])
+            return json.dumps([{"data": {"repository": {"issue": {"subIssues": {
+                "nodes": items, "pageInfo": {"hasNextPage": index < len(pages) - 1 or
+                                           number in self.incomplete, "endCursor": str(index)}}}}}}
+                for index, items in enumerate(pages)])
+        with patch.object(repo, "run", side_effect=run), patch.object(repo, "collect", return_value={}):
+            return repo.read()
+
+    def generate(self):
+        return repo.generate(self.read(), datetime.fromisoformat("2026-11-10T13:00:00+00:00"))[0]
+
+    def test_grandchild_closed_and_open_totals_roll_up(self):
+        for state, counts in [("CLOSED", (1, 1)), ("OPEN", (0, 2))]:
+            with self.subTest(state=state):
+                self.grandchild["state"] = state
+                epic = self.generate()["epics"][0]
+                self.assertEqual(counts, (epic["closed"], epic["open"]))
+
+    def test_grandchild_prs_and_hourly_merges_roll_up_once(self):
+        linked = [{"number": 300, "state": "OPEN", "mergedAt": None},
+                  {"number": 301, "state": "MERGED", "mergedAt": "2026-11-10T12:15:00Z"}]
+        self.grandchild["closedByPullRequestsReferences"]["nodes"] = linked
+        self.child["closedByPullRequestsReferences"]["nodes"] = linked[:1]
+        epic = self.generate()["epics"][0]
+        self.assertEqual((1, 1), (epic["open_prs"], epic["merged_last_24h"]))
+        self.assertEqual([0] * 23 + [1], epic["merges_per_hour"])
+
+    def test_only_open_grandchildren_roll_up_blockers_and_fallback_titles(self):
+        self.grandchild["body"] = "Blocked by #55: waiting on roster\nClears it: Engineering"
+        for state in ("OPEN", "CLOSED"):
+            with self.subTest(state=state):
+                self.grandchild["state"] = state
+                epic = self.generate()["epics"][0]
+                self.assertEqual([220] if state == "OPEN" else [], epic["blockers"])
+                if state == "OPEN":
+                    self.assertEqual("Roster", epic["blockerDetails"][0]["title"])
+                    self.assertEqual("Engineering", epic["blockedChildren"][0]["clearsIt"])
+
+    def test_cycles_and_shared_descendants_are_counted_once(self):
+        sibling = self.issue(210)
+        self.graph[750].append(sibling)
+        self.graph[210] = [self.grandchild]
+        self.graph[220] = [self.epics[0], self.child]
+        snapshot = self.read()
+        self.assertEqual([209, 220, 210], [c["number"] for c in snapshot["epics"][0]["children"]])
+        self.assertEqual(len(set(self.queries)), len(self.queries))
+        epic = repo.generate(snapshot)[0]["epics"][0]
+        self.assertEqual((1, 2), (epic["closed"], epic["open"]))
+
+    def test_paginated_grandchildren_are_all_counted(self):
+        self.pages[209] = [[self.grandchild], [self.issue(221)]]
+        epic = self.generate()["epics"][0]
+        self.assertEqual((1, 2), (epic["closed"], epic["open"]))
+
+    def test_truncated_grandchild_page_fails_visibly(self):
+        self.incomplete.add(209)
+        with self.assertRaisesRegex(ValueError, "Incomplete.*sub-issues"):
+            self.read()
+
+    def test_nested_epic_keeps_its_row_and_shared_descendants(self):
+        self.epics.append(self.child)
+        epics = {epic["number"]: epic for epic in self.generate()["epics"]}
+        self.assertEqual((1, 1), (epics[750]["closed"], epics[750]["open"]))
+        self.assertEqual((1, 0), (epics[209]["closed"], epics[209]["open"]))
+        self.assertEqual(1, self.queries.count(209))
+
+    def test_private_descendants_are_not_counted_or_traversed(self):
+        private = self.issue(220)
+        private.update(title="PRIVATE descendant", repository={"nameWithOwner": "example/private"})
+        sibling = dict(private, number=210)
+        self.graph[209] = [private, sibling, self.grandchild]
+        self.graph[210] = [self.issue(221)]
+        snapshot = self.read()
+        data, body = repo.generate(snapshot)
+        self.assertNotIn("PRIVATE", json.dumps(snapshot) + json.dumps(data) + body)
+        self.assertNotIn(210, self.queries)
+        self.assertEqual((1, 1), (data["epics"][0]["closed"], data["epics"][0]["open"]))
+
+    def test_three_levels_roll_up_but_deeper_reads_fail_visibly(self):
+        self.graph[220] = [self.issue(221)]
+        epic = self.generate()["epics"][0]
+        self.assertEqual((1, 2), (epic["closed"], epic["open"]))
+        self.graph[221] = [self.issue(222)]
+        with self.assertRaisesRegex(ValueError, "Incomplete.*sub-issues.*depth"):
+            self.read()
+
+    def test_partial_grandchild_metadata_fails_visibly(self):
+        for field, message in [("labels", "Incomplete issue labels"),
+                               ("blockedBy", "Incomplete blocker relations"),
+                               ("closedByPullRequestsReferences", "Incomplete linked pull requests")]:
+            with self.subTest(field=field):
+                self.grandchild["state"] = "OPEN"
+                self.grandchild[field]["pageInfo"]["hasNextPage"] = True
+                with self.assertRaisesRegex(ValueError, message):
+                    self.generate()
+                self.grandchild[field]["pageInfo"]["hasNextPage"] = False
