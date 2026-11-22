@@ -80,7 +80,7 @@ test('blocked fleet rereads reset baked merged totals to public-only and show fl
     return request()(url);
   });
   assert.match(target.innerHTML, /class="stat num">100<\/div>/);
-  assert.match(target.innerHTML, /17 in the last 24 h; agent-bridge only/);
+  assert.match(target.innerHTML, /17 in the last 24 h; agent-bridge only; slipgates-fleet total not published yet/);
   assert.ok(target.innerHTML.includes(generatedAt));
   assert.doesNotMatch(target.innerHTML, />199<\/div>|slipgates-fleet Updated at/);
   assert.match(reload.targets.fleet.innerHTML, /unavailable/i);

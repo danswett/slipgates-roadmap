@@ -39,7 +39,7 @@ const stamp = (value, label = '') => {
 export function renderMergedCounts(total, recent, fleet, publicGeneratedAt) {
   const count = (n) => Number.isSafeInteger(n) && n >= 0 ? n : 'Data unavailable';
   const all = count(total), last = count(recent), combined = typeof all === 'number' && fleet?.prsMergedTotal !== undefined;
-  const detail = `<div class="sub">${typeof last === 'number' && combined ? count(last + fleet.prsMerged24h) : last} in the last 24 h${typeof all === 'number' && !combined ? '; agent-bridge only' : ''}</div>`;
+  const detail = `<div class="sub">${typeof last === 'number' && combined ? count(last + fleet.prsMerged24h) : last} in the last 24 h${typeof all === 'number' && !combined ? '; agent-bridge only; slipgates-fleet total not published yet' : ''}</div>`;
   const sources = stamp({ generatedAt: publicGeneratedAt }, 'agent-bridge ') + (combined ? stamp(fleet, 'slipgates-fleet ') : '');
   return typeof all === 'number' ? `<div class="stat num">${count(all + (combined ? fleet.prsMergedTotal : 0))}</div>${detail}${sources}`
     : detail + '<div class="none">Data unavailable</div>';

@@ -48,7 +48,9 @@ const done = epics.reduce((n, e) => n + e.closed, 0), total = epics.reduce((n, e
 const tile = (title, body) => `<div class="card"><h2>${title}</h2>${body}</div>`;
 const number = (n) => { const result = count(n); return `<div class="${typeof result === 'number' ? 'stat num' : 'none'}">${result}</div>`; };
 const mergedTile = () => `<div data-live-merged data-total="${count(stats?.prsMergedTotal)}" data-recent="${count(stats?.merges?.last_24_hours)}" data-generated-at="${escape(timestamp)}">${renderMergedCounts(stats?.prsMergedTotal, stats?.merges?.last_24_hours, fleetCounts, timestamp)}</div>`;
-const peopleTile = () => `<div data-live-counts="people">${renderPeopleCounts(readPeopleCounts(people))}</div>`;
+const peopleCounts = readPeopleCounts(people);
+// No tile without a fresh public numbers-only file: the producer does not refresh it yet.
+const peopleTile = () => peopleCounts ? tile('People at work', `<div data-live-counts="people">${renderPeopleCounts(peopleCounts)}</div>`) : '';
 const time = `<time datetime="${escape(timestamp)}">${escape(updated)}</time>`, stale = Date.now() - Date.parse(timestamp) > 15 * 60000;
 const stamp = `<span class="stamp${reason ? ' stale' : ''}">${reason ? warn : clock}<span>${stale ? 'Out of date. Last update ' : reason ? 'Data unavailable. ' : 'Updated '}${time}</span></span>`;
 const content = reason
@@ -58,7 +60,7 @@ const content = reason
 <div class="grid tiles" aria-label="Totals">${tile('Commits', number(stats?.commits?.total) + '<div class="sub">on main, all time</div>')}
 ${tile('Pull requests merged', mergedTile())}
 ${tile('Issues resolved', `<div class="stat num">${count(issues?.resolved)}<small>of ${count(issues?.total)}</small></div>` + ([issues?.resolved, issues?.total].every(Number.isSafeInteger) && issues.resolved >= 0 && issues.total >= issues.resolved ? bar(issues.resolved, issues.total, 'Issues resolved', true) : ''))}
-${tile('People at work', peopleTile())}</div>${renderCharts(stats)}
+${peopleTile()}</div>${renderCharts(stats)}
 <section class="grid" aria-labelledby="h-ep"><h2 id="h-ep">Epics</h2><ul class="epics">${renderEpics(epics, escape)}</ul></section>${renderBlockers(epics, escape)}${renderNeedsBlocker(epics, escape)}`;
 mkdirSync(out, { recursive: true });
 for (const asset of ['tokens.css', 'style.css', 'blockers.css', 'fonts', 'people-freshness.mjs', 'live-counts.mjs', 'people-at-work.mjs', 'fleet-counts.mjs']) cpSync(fileURLToPath(new URL(asset, import.meta.url)), join(out, asset), { recursive: true });

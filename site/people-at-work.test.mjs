@@ -25,7 +25,7 @@ function render(input) {
     const run = spawnSync(process.execPath, ['site/build.mjs', data, out, join(dir, 'missing-fleet'), path], { encoding: 'utf8' });
     assert.equal(run.status, 0, run.stderr);
     const html = readFileSync(join(out, 'index.html'), 'utf8');
-    return { html, tile: html.split('<h2>People at work</h2>')[1].split('</div></div>')[0], stderr: run.stderr };
+    return { html, tile: html.split('<h2>People at work</h2>')[1]?.split('</div></div>')[0], stderr: run.stderr };
   });
 }
 
@@ -53,8 +53,8 @@ test('the tile uses only validated public counts, never fallback roadmap people 
     ...markers.map((marker) => ({ ...valid, privateName: marker })),
     { ...valid, builders: markers[0] }, { ...valid, generatedAt: markers[1] }]) {
     const bad = render(input);
-    assert.match(bad.tile, /Data unavailable/);
-    assert.doesNotMatch(bad.tile, /class="stat num"|999|998/);
+    assert.equal(bad.tile, undefined, 'no tile without fresh public counts');
+    assert.doesNotMatch(bad.html, /People at work|999|998/);
     assert.match(bad.html, /<h2>Commits<\/h2><div class="stat num">123/);
     for (const marker of markers) assert.ok(!(bad.html + bad.stderr).includes(marker));
   }
