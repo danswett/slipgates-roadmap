@@ -85,7 +85,7 @@ test('merged tile sums validated all-time counts and labels a legacy fleet file 
     const partial = tile(render(fleet).html);
     assert.match(partial, /class="stat num">789<\/div>/);
     assert.match(partial, /17 in the last 24 h/);
-    assert.match(partial, /agent-bridge only/);
+    assert.match(partial, /agent-bridge only; slipgates-fleet total not published yet/);
   }
   const zero = tile(render({ ...counts, prsMergedTotal: 0 }, true, 0).html);
   assert.match(zero, /class="stat num">0<\/div>/);

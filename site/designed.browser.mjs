@@ -82,7 +82,7 @@ test('designed roadmap renders on phone and desktop without outside requests', {
       assert.match(view.header, /Slipgates.*Roadmap/); assert.equal(view.overflow, false); assert.equal(view.targets, true);
       assert.ok(view.fonts.includes('Slipgates Sans')); assert.equal(view.motion, true); assert.match(view.text, /slipgates-fleet \(private repo, counts only\)/);
       if (state === 'fresh' || state === 'partial') {
-        assert.equal(view.title, 'Where Slipgates stands'); assert.equal(view.tiles, 4); assert.equal(view.epics.length, 3);
+        assert.equal(view.title, 'Where Slipgates stands'); assert.equal(view.tiles, state === 'fresh' ? 4 : 3); assert.equal(view.epics.length, 3);
         const blockers = await evaluate(`(() => { const card = document.querySelector('[aria-labelledby="h-bl"]'); return card && { title: card.querySelector('h2').textContent, text: card.textContent, rows: card.querySelectorAll('li').length, glyphs: card.querySelectorAll('svg[aria-hidden="true"]').length, clipped: [...card.querySelectorAll('a,p')].some(e => e.scrollWidth > e.clientWidth + 1), color: getComputedStyle(card.querySelector('svg')).color, amber: getComputedStyle(document.querySelector('.blk summary svg')).color }; })()`);
         assert.ok(blockers, `${width}-${state}: standalone Blockers card`);
         assert.equal(blockers.title, 'Blockers'); assert.equal(blockers.rows, 1); assert.equal(blockers.glyphs, 1);

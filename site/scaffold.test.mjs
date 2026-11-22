@@ -124,9 +124,7 @@ test('partial tiles use one muted unavailable note and preserve the real merge c
     const run = spawnSync(process.execPath, ['site/build.mjs', data, out], { encoding: 'utf8' });
     assert.equal(run.status, 0, run.stderr);
     const html = readFileSync(join(out, 'index.html'), 'utf8');
-    const people = html.split('<h2>People at work</h2>')[1]?.split('<section')[0];
-    assert.equal(people?.match(/Data unavailable/g)?.length, 1);
-    assert.doesNotMatch(people, /Data unavailable (?:builders|reviewers)/);
+    assert.doesNotMatch(html, /People at work/);
     assert.match(html, /17 in the last 24 h<\/div><div class="none">Data unavailable/);
     assert.match(html, /<footer>.*private slipgates-fleet epics.*No cookies or trackers\. Counts read from public GitHub\./s);
   } finally { rmSync(dir, { recursive: true }); }

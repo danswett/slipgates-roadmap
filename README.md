@@ -54,7 +54,9 @@ that panel. No private text or rejected payload is rendered or logged.
 The branded header, hero, totals and epic cards follow the approved #1897 design.
 Epic cards show child progress, open children, blockers, open PRs and 24-hour merges,
 in the generator's #696-then-priority order. Invalid epic details show Data unavailable.
-Missing live people counts remain explicitly unavailable;
+The People at work tile is drawn only when `people-at-work.json` is fresh at build time (15 minutes);
+otherwise it is left out rather than showing stale or unavailable numbers. A missing `prsMergedTotal`
+from the fleet producer shows "agent-bridge only; slipgates-fleet total not published yet" on the merged tile;
 30-day authors and review families are not presented as people at work.
 People counts come only from public `people-at-work.json` on `fleet-counts`,
 fetched without credentials. Exactly `schema: 1`, UTC `generatedAt`, and integer
