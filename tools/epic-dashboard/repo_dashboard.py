@@ -4,6 +4,7 @@ import html
 import json
 import re
 import subprocess
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -64,8 +65,24 @@ def blocker_details(issue, titles, labels):
     return result
 
 
+# A GitHub hiccup (a GraphQL "Something went wrong", a 5xx, a timeout) must not become the deployed "Data unavailable" page
+# (2026-11-23 16:14Z): a read is tried up to three times, waiting 2 s then 5 s. A real refusal (401, 403, 404, rate limit) and any
+# write (--method) are never retried.
+TRANSIENT = re.compile(r"Something went wrong while executing your query|HTTP 5\d\d|timed? ?out|EOF|connection (?:reset|refused)", re.IGNORECASE)
+RETRY_WAITS = (2, 5)
+
+
 def run(*args):
-    return subprocess.run(args, capture_output=True, text=True, encoding="utf-8", check=True).stdout
+    attempt = 0
+    while True:
+        try:
+            return subprocess.run(args, capture_output=True, text=True, encoding="utf-8", check=True).stdout
+        except subprocess.CalledProcessError as error:
+            transient = "--method" not in args and isinstance(error.stderr, str) and TRANSIENT.search(error.stderr)
+            if not transient or attempt >= len(RETRY_WAITS):
+                raise
+            time.sleep(RETRY_WAITS[attempt])
+            attempt += 1
 
 
 def failure_detail(error):

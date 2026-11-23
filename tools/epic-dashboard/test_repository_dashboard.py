@@ -52,6 +52,40 @@ class RepositoryDashboardTests(unittest.TestCase):
             subprocess.CalledProcessError(1, ["gh"], output="", stderr="  \n")))
         self.assertLessEqual(len(repo.failure_detail(subprocess.CalledProcessError(1, ["gh"], stderr="x" * 900))), 200)
 
+    # 2026-11-23 16:14Z: one GitHub GraphQL hiccup in the data job became the deployed "Data unavailable" page. A read retries a
+    # transient failure (GraphQL "Something went wrong", a 5xx, a timeout) a few times before it gives up; a real refusal is not retried.
+    def failure(self, message):
+        return subprocess.CalledProcessError(1, ["gh", "api", "graphql"], output="", stderr=message)
+
+    def test_a_read_retries_a_transient_github_failure_and_then_succeeds(self):
+        transient = self.failure("gh: Something went wrong while executing your query on 2026-11-23T16:14:40Z. Please include `D01F:10C6B` when reporting this")
+        good = subprocess.CompletedProcess(["gh"], 0, stdout="{}", stderr="")
+        sleeps = []
+        with patch.object(repo.subprocess, "run", side_effect=[transient, self.failure("gh: HTTP 502: Bad Gateway"), good]) as call, \
+             patch.object(repo.time, "sleep", side_effect=sleeps.append):
+            self.assertEqual(repo.run("gh", "api", "graphql"), "{}")
+        self.assertEqual(call.call_count, 3)
+        self.assertEqual(sleeps, [2, 5])
+
+    def test_a_read_gives_up_after_three_transient_failures_with_the_last_reason(self):
+        with patch.object(repo.subprocess, "run", side_effect=[self.failure("gh: HTTP 503: Service Unavailable")] * 3) as call, \
+             patch.object(repo.time, "sleep"):
+            with self.assertRaises(subprocess.CalledProcessError) as caught:
+                repo.run("gh", "api", "graphql")
+        self.assertEqual(call.call_count, 3)
+        self.assertIn("503", caught.exception.stderr)
+
+    def test_a_real_refusal_and_a_write_are_never_retried(self):
+        for args, message in [(("gh", "api", "graphql"), "gh: API rate limit exceeded for installation (HTTP 403)"),
+                              (("gh", "api", "graphql"), "gh: Bad credentials (HTTP 401)"),
+                              (("gh", "api", "--method", "PATCH", "repos/x/issues/755"), "gh: Something went wrong while executing your query")]:
+            with self.subTest(args=args), patch.object(repo.subprocess, "run", side_effect=[self.failure(message)] * 3) as call, \
+                 patch.object(repo.time, "sleep") as sleep:
+                with self.assertRaises(subprocess.CalledProcessError):
+                    repo.run(*args)
+            self.assertEqual(call.call_count, 1)
+            sleep.assert_not_called()
+
     def test_paginated_reads_reject_graphql_errors(self):
         pages = [{"data":{"repository":{"issues":{"nodes":[{"number":749}]}}}},
                  {"data":{"repository":{"issues":{"nodes":[{"number":750}]}}}}]
