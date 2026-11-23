@@ -7,7 +7,9 @@ import { renderCharts } from './charts.mjs';
 import { renderPeopleCounts } from './people-at-work.mjs';
 import { readPeopleCounts, readFleetCounts } from './counts-files.mjs';
 
-const [data = 'data/roadmap.json', out = '_site', fleet = 'data/fleet-counts.json', people = 'data/people-at-work.json'] = process.argv.slice(2);
+// --require-data (the Pages build): refuse to publish the unavailable page, so the last good page stays live.
+const args = process.argv.slice(2), requireData = args.includes('--require-data');
+const [data = 'data/roadmap.json', out = '_site', fleet = 'data/fleet-counts.json', people = 'data/people-at-work.json'] = args.filter((arg) => arg !== '--require-data');
 let value, reason = '';
 try {
   value = JSON.parse(readFileSync(data, 'utf8'));
@@ -25,6 +27,10 @@ try {
   reason = error.code === 'ENOENT' ? 'Data artifact is missing.' : 'Data artifact is invalid JSON.';
 }
 if (reason) console.error(`Data unavailable: ${reason}`);
+if (reason && requireData) {
+  console.error('Refusing to publish the unavailable page (--require-data): the last good page stays.');
+  process.exit(1);
+}
 const escape = (text) => text.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const timestamp = typeof value?.updatedAt === 'string' && Number.isFinite(Date.parse(value.updatedAt)) ? value.updatedAt : new Date().toISOString();
 const updated = new Intl.DateTimeFormat('en-US', {

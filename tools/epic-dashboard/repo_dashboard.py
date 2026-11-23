@@ -68,6 +68,13 @@ def run(*args):
     return subprocess.run(args, capture_output=True, text=True, encoding="utf-8", check=True).stdout
 
 
+def failure_detail(error):
+    """Why a gh call failed: the first line it printed to stderr, capped and with any token shape removed."""
+    lines = ((error.stderr or "") if isinstance(error.stderr, str) else "").strip().splitlines()
+    line = re.sub(r"(?:gh[pousr]_|github_pat_)\w+", "[redacted]", lines[0].strip())[:200] if lines else ""
+    return line or f"gh exited {error.returncode} with no output"
+
+
 def nodes(query, path):
     pages = json.loads(run("gh", "api", "graphql", "--paginate", "--slurp", "-f", f"query={query}"))
     result = []
@@ -182,7 +189,7 @@ def main():
     try:
         data, body = generate(read())
     except (subprocess.CalledProcessError, OSError, ValueError, KeyError, TypeError) as error:
-        reason = str(error) if isinstance(error, ValueError) else f"Repository read failed ({type(error).__name__})"
+        reason = (str(error) if isinstance(error, ValueError) else f"Repository read failed ({type(error).__name__})" + (f": {failure_detail(error)}" if isinstance(error, subprocess.CalledProcessError) else ""))
         data, body = {"error": reason, "epics": []}, f"# Slipgates: epic dashboard\n\nData unavailable: {reason}\n"
     args.json_output.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     args.body_output.write_text(body, encoding="utf-8")

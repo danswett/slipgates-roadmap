@@ -131,3 +131,36 @@ test('partial tiles use one muted unavailable note and preserve the real merge c
     assert.match(html, /<footer>.*private slipgates-fleet epics.*No cookies or trackers\. Counts read from public GitHub\./s);
   } finally { rmSync(dir, { recursive: true }); }
 });
+
+test('--require-data fails the build instead of publishing the unavailable page, so the last good page stays', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'roadmap-require-'));
+  try {
+    const data = join(dir, 'data.json');
+    const stats = { 'danswett/agent-bridge': { commits: { total: 1 }, issues: { counts: { resolved: 1, total: 2 } }, merges: { last_24_hours: 17 } } };
+    const fresh = { updatedAt: new Date().toISOString(), epics: [], stats };
+    const build = (out) => spawnSync(process.execPath, ['site/build.mjs', data, out, '--require-data'], { encoding: 'utf8' });
+    for (const [name, body] of [['an error from the read', { ...fresh, error: 'Repository read failed (CalledProcessError)' }],
+      ['an out-of-date artifact', { ...fresh, updatedAt: new Date(Date.now() - 3600000).toISOString() }],
+      ['invalid epics', { ...fresh, epics: null }], ['invalid JSON', null]]) {
+      writeFileSync(data, body === null ? '{' : JSON.stringify(body));
+      const out = join(dir, `out-${name.replaceAll(' ', '-')}`);
+      const run = build(out);
+      assert.equal(run.status, 1, `${name}: ${run.stderr}`);
+      assert.match(run.stderr, /Data unavailable/);
+      assert.equal(existsSync(join(out, 'index.html')), false, `${name} must not write a page`);
+    }
+    rmSync(data);
+    const missing = build(join(dir, 'out-missing'));
+    assert.equal(missing.status, 1, missing.stderr);
+    assert.equal(existsSync(join(dir, 'out-missing', 'index.html')), false);
+    writeFileSync(data, JSON.stringify(fresh));
+    const ok = build(join(dir, 'out-fresh'));
+    assert.equal(ok.status, 0, ok.stderr);
+    assert.ok(existsSync(join(dir, 'out-fresh', 'index.html')));
+    // Without the flag nothing changes: the unavailable page is still the default for local runs and tests.
+    writeFileSync(data, JSON.stringify({ ...fresh, error: 'Repository read failed' }));
+    const plain = spawnSync(process.execPath, ['site/build.mjs', data, join(dir, 'out-plain')], { encoding: 'utf8' });
+    assert.equal(plain.status, 0, plain.stderr);
+    assert.match(readFileSync(join(dir, 'out-plain', 'index.html'), 'utf8'), /Data unavailable/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
