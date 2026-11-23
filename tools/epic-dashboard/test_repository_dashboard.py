@@ -1,5 +1,6 @@
 import json
 import tempfile
+import subprocess
 import unittest
 from datetime import datetime
 from pathlib import Path
@@ -34,6 +35,22 @@ class RepositoryDashboardTests(unittest.TestCase):
                 repo.main()
             self.assertIn("Data unavailable: incomplete sub-issues", body.read_text())
             self.assertEqual("incomplete sub-issues", json.loads(output.read_text())["error"])
+
+    def test_a_failed_gh_call_says_why_in_the_unavailable_reason_without_secrets(self):
+        error = subprocess.CalledProcessError(1, ["gh", "api", "graphql"], output="",
+                                              stderr="gh: API rate limit exceeded for installation (HTTP 403)\nsecond line")
+        with tempfile.TemporaryDirectory() as directory:
+            output, body = Path(directory) / "data.json", Path(directory) / "body.md"
+            with patch.object(repo, "read", side_effect=error), \
+                 patch("sys.argv", ["repo_dashboard", "--json-output", str(output), "--body-output", str(body)]):
+                repo.main()
+            reason = json.loads(output.read_text())["error"]
+            self.assertIn("Repository read failed (CalledProcessError)", reason)
+            self.assertIn("API rate limit exceeded", reason)
+            self.assertNotIn("second line", reason)
+        self.assertEqual("gh exited 1 with no output", repo.failure_detail(
+            subprocess.CalledProcessError(1, ["gh"], output="", stderr="  \n")))
+        self.assertLessEqual(len(repo.failure_detail(subprocess.CalledProcessError(1, ["gh"], stderr="x" * 900))), 200)
 
     def test_paginated_reads_reject_graphql_errors(self):
         pages = [{"data":{"repository":{"issues":{"nodes":[{"number":749}]}}}},
