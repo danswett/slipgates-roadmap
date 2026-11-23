@@ -34,8 +34,8 @@ test('data failure cannot skip the token-free build or main-only serialized depl
   assert.equal(existsSync('CNAME'), false);
 });
 
-test('five-minute and manual refresh include a separate scoped keepalive', () => {
-  assert.match(workflow(), /cron: '\*\/5 \* \* \* \*'/);
+test('fifteen-minute and manual refresh include a separate scoped keepalive', () => {
+  assert.match(workflow(), /cron: '\*\/15 \* \* \* \*'/);
   assert.match(workflow(), /workflow_dispatch:/);
   assert.match(job('keepalive'), /actions: write/);
   assert.match(job('keepalive'), /gh api --method PUT.*actions\/workflows\/pages.yml\/enable/);
