@@ -88,17 +88,41 @@ def nodes(query, path):
     return result
 
 
+# One sub-issue's selection: its fields and the pull requests that close it.
+CHILD = ("{" + FIELDS + " closedByPullRequestsReferences(first:100,includeClosedPrs:true){"
+         "pageInfo{hasNextPage} nodes{number state mergedAt repository{nameWithOwner}}}}")
+BATCH = 6  # epics per request: the workflow token allows 1,000 requests an hour, so requests, not nodes, are the cost
+
+
+def batched_children(epics):
+    """Each epic's first page of sub-issues, BATCH epics per request; None where there is another page."""
+    first_pages = {}
+    for start in range(0, len(epics), BATCH):
+        chunk = epics[start:start + BATCH]
+        aliases = "".join(f'e{epic["number"]}:issue(number:{epic["number"]}){{subIssues(first:100){{{PAGE}{CHILD}}}}}'
+                          for epic in chunk)
+        answer = json.loads(run("gh", "api", "graphql", "-f", f"query=query{{{ROOT}{{{aliases}}}}}"))
+        if answer.get("errors"):
+            raise ValueError("GitHub query failed")
+        found = answer["data"]["repository"]
+        for epic in chunk:
+            page = found[f'e{epic["number"]}']["subIssues"]
+            first_pages[epic["number"]] = None if page["pageInfo"]["hasNextPage"] else page["nodes"]
+    return first_pages
+
+
 def read():
     epics = nodes(f'query($endCursor:String){{{ROOT}{{issues(first:100,after:$endCursor,'
                   f'labels:["epic"],states:[OPEN,CLOSED]){{{PAGE}{{{FIELDS}}}}}}}}}',
                   ("repository", "issues"))
+    first_pages = batched_children(epics)
     for epic in epics:
-        epic["children"] = nodes(
-            f'query($endCursor:String){{{ROOT}{{issue(number:{epic["number"]}){{'
-            f'subIssues(first:100,after:$endCursor){{{PAGE}{{{FIELDS} '
-            'closedByPullRequestsReferences(first:100,includeClosedPrs:true){'
-            'pageInfo{hasNextPage} nodes{number state mergedAt repository{nameWithOwner}}}}}}}}',
-            ("repository", "issue", "subIssues"))
+        epic["children"] = first_pages[epic["number"]]
+        if epic["children"] is None:  # more than one page of sub-issues: this epic is read page by page
+            epic["children"] = nodes(
+                f'query($endCursor:String){{{ROOT}{{issue(number:{epic["number"]}){{'
+                f'subIssues(first:100,after:$endCursor){{{PAGE}{CHILD}}}}}}}}}',
+                ("repository", "issue", "subIssues"))
     priority = json.loads(run("gh", "api", f"repos/{R}/issues/696"))["body"]
     epics = public_epics(epics)
     issues = [issue for epic in epics for issue in [epic, *epic["children"]]]

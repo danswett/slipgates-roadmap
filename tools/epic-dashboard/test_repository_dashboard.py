@@ -1,4 +1,5 @@
 import json
+import re
 import tempfile
 import subprocess
 import unittest
@@ -51,6 +52,52 @@ class RepositoryDashboardTests(unittest.TestCase):
         self.assertEqual("gh exited 1 with no output", repo.failure_detail(
             subprocess.CalledProcessError(1, ["gh"], output="", stderr="  \n")))
         self.assertLessEqual(len(repo.failure_detail(subprocess.CalledProcessError(1, ["gh"], stderr="x" * 900))), 200)
+
+    def _fake_gh(self, queries, big_epic=None):
+        """A stand-in for gh: seven epics, one child each; `big_epic` says it has another page of children."""
+        repo_ref = {"nameWithOwner": repo.R}
+
+        def child(number):
+            return {"number": number, "title": f"C{number}", "state": "OPEN", "body": "", "repository": repo_ref,
+                    "labels": {"pageInfo": {"hasNextPage": False}, "nodes": []},
+                    "blockedBy": {"pageInfo": {"hasNextPage": False}, "nodes": [{"number": 1, "title": "x", "repository": repo_ref}]},
+                    "closedByPullRequestsReferences": {"pageInfo": {"hasNextPage": False}, "nodes": []}}
+
+        def epic(number):
+            return dict(child(number), title=f"E{number}", labels={"pageInfo": {"hasNextPage": False}, "nodes": [{"name": "epic"}]})
+
+        def run(*args):
+            if args[2] != "graphql":
+                return json.dumps({"body": ""})
+            query = args[-1].removeprefix("query=")
+            queries.append(query)
+            if 'labels:["epic"]' in query:
+                return json.dumps([{"data": {"repository": {"issues": {"nodes": [epic(n) for n in range(1, 8)]}}}}])
+            aliases = re.findall(r"e(\d+):issue\(number:", query)
+            if aliases:
+                return json.dumps({"data": {"repository": {f"e{n}": {"subIssues": {
+                    "nodes": [child(int(n) * 10)], "pageInfo": {"hasNextPage": int(n) == big_epic, "endCursor": "more"}}} for n in aliases}}})
+            number = int(re.search(r"issue\(number:(\d+)\)", query)[1])
+            return json.dumps([{"data": {"repository": {"issue": {"subIssues": {"nodes": [child(number * 10), child(number * 100)]}}}}}])
+        return run
+
+    def test_the_children_of_many_epics_are_read_in_batched_requests(self):
+        queries = []
+        with patch.object(repo, "run", self._fake_gh(queries)), patch.object(repo, "collect", return_value={}):
+            snapshot = repo.read()
+        child_requests = [q for q in queries if "subIssues" in q]
+        self.assertEqual(2, len(child_requests))  # six epics, then one; not seven requests
+        self.assertEqual([[n * 10] for n in range(1, 8)],
+                         [[c["number"] for c in epic["children"]] for epic in snapshot["epics"]])
+
+    def test_an_epic_with_more_children_than_one_page_falls_back_to_its_own_paginated_read(self):
+        queries = []
+        with patch.object(repo, "run", self._fake_gh(queries, big_epic=3)), patch.object(repo, "collect", return_value={}):
+            snapshot = repo.read()
+        self.assertEqual(3, len([q for q in queries if "subIssues" in q]))  # two batches plus epic 3's own pages
+        self.assertEqual([30, 300], [c["number"] for c in snapshot["epics"][2]["children"]])
+        self.assertEqual([[n * 10] for n in (1, 2, 4, 5, 6, 7)],
+                         [[c["number"] for c in epic["children"]] for epic in snapshot["epics"] if epic["number"] != 3])
 
     def test_paginated_reads_reject_graphql_errors(self):
         pages = [{"data":{"repository":{"issues":{"nodes":[{"number":749}]}}}},
@@ -177,7 +224,8 @@ class BlockerTests(unittest.TestCase):
     def test_read_fetches_bodies_relations_and_only_public_fallback_titles(self):
         self.child["body"] = "Blocked by #55 and danswett/slipgates-fleet#313"
         epic = {k: v for k, v in self.epic.items() if k != "children"}
-        with patch.object(repo, "nodes", side_effect=[[epic], [self.child]]) as nodes, \
+        with patch.object(repo, "nodes", side_effect=[[epic]]) as nodes, \
+             patch.object(repo, "batched_children", return_value={epic["number"]: [self.child]}), \
              patch.object(repo, "run", side_effect=[json.dumps({"body": ""}),
                                                     json.dumps({"title": "Roster"})]) as run, \
              patch.object(repo, "collect", return_value={}):

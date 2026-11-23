@@ -150,6 +150,8 @@ class ThroughputTests(unittest.TestCase):
                                    "pageInfo": {"hasNextPage": True, "endCursor": "last" if second else "next"}}}
             elif "pullRequests(first" in query:
                 self.assertIn("authorAssociation", query)
+                # 100 a page, not 50: the workflow token allows 1,000 requests an hour, so pages are the cost.
+                self.assertIn("pullRequests(first:100,", query)
                 data = {"pullRequests": {"nodes": fixture()["pulls"], "pageInfo": page}}
             elif "history(first:0)" in query:
                 data = {"ref": {"target": {"history": {"totalCount": 1234}}}}

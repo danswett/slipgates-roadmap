@@ -178,7 +178,7 @@ def collect(run, now=None, budget=60):
         load("issue_counts", totals)
         load("closed_issues", lambda: pages("issues(first:100,after:CURSOR,states:CLOSED,orderBy:{field:UPDATED_AT,direction:DESC})"
                                           "{nodes{closedAt updatedAt}" + page_info + "}", ("issues",), start - timedelta(days=13)))
-        load("pulls", lambda: pages("pullRequests(first:50,after:CURSOR,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{"
+        load("pulls", lambda: pages("pullRequests(first:100,after:CURSOR,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{"
                                   "createdAt updatedAt mergedAt headRefOid author{login} comments(first:100){nodes{body authorAssociation}pageInfo{hasNextPage}}"
                                   "timelineItems(first:100,itemTypes:[LABELED_EVENT]){nodes{... on LabeledEvent{createdAt label{name}}}"
                                   "pageInfo{hasNextPage}}}" + page_info + "}", ("pullRequests",), start - timedelta(days=29)))
