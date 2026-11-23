@@ -50,7 +50,7 @@ test('only validated fleet counts render, independently of agent-bridge data', (
   assert.match(html, /Issues open: 0; resolved: 9; commits: 100000000/);
 });
 
-test('missing, malformed, stale or non-allow-listed fleet data fails only its panel', () => {
+test('missing, malformed, future-dated or non-allow-listed fleet data fails only its panel', () => {
   const counts = sample();
   const missing = { ...counts }; delete missing.commits;
   const missingBin = { ...counts }; delete missingBin.mergeHour23;
@@ -61,7 +61,7 @@ test('missing, malformed, stale or non-allow-listed fleet data fails only its pa
     { ...counts, mergeHour00: 1.5 }, { ...counts, mergeDay00: -1 },
     ...['100', 1.5, -1, 100000001, true, null, {}].map((prsMergedTotal) => ({ ...counts, prsMergedTotal })),
     ...['4', 1.5, -1, 100000001, true, {}, []].map((issuesOpen) => ({ ...counts, issuesOpen })),
-    ...['not a time', null, new Date(Date.now() - 7201000).toISOString(),
+    ...['not a time', null,
       new Date(Date.now() + 3600000).toISOString()].map((generatedAt) => ({ ...counts, generatedAt }))]) {
     const { html, stderr } = render(input);
     assert.match(html, /Fleet counts unavailable/);
@@ -93,6 +93,18 @@ test('merged tile sums validated all-time counts and labels a legacy fleet file 
   assert.match(tile(missingPublic.html), /Data unavailable/);
   assert.doesNotMatch(tile(missingPublic.html), /class="stat num">/);
   assert.match(missingPublic.html, /Issues open: 4; resolved: 9/);
+});
+
+// 2026-11-23: the last good fleet file stays on the page with its own as-of time (the stamp) when the counts task has stopped.
+test('a stale but valid fleet file shows the last good counts with their as-of time, not Fleet counts unavailable', () => {
+  for (const age of [7201000, 3 * 86400000]) {
+    const old = { ...sample(), generatedAt: new Date(Date.now() - age).toISOString() };
+    const { html, stderr } = render(old);
+    assert.doesNotMatch(html, /Fleet counts unavailable/);
+    assert.match(html, /Issues open: 4; resolved: 9; commits: 12345/);
+    assert.ok(html.includes(`datetime="${old.generatedAt}"`));
+    assert.doesNotMatch(stderr, /Fleet counts unavailable/);
+  }
 });
 
 test('private titles, labels, authors and branches never reach the page or logs', () => {

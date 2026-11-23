@@ -49,7 +49,7 @@ test('the tile uses only validated public counts, never fallback roadmap people 
   assert.match(good.tile, /class="stat num">1000<\/div><span class="sub">reviewers/);
   assert.ok(good.html.includes(`datetime="${valid.generatedAt}"`));
   assert.doesNotMatch(good.tile, /Data unavailable|999|998/);
-  for (const input of [undefined, { ...valid, generatedAt: new Date(Date.now() - 901000).toISOString() },
+  for (const input of [undefined,
     ...markers.map((marker) => ({ ...valid, privateName: marker })),
     { ...valid, builders: markers[0] }, { ...valid, generatedAt: markers[1] }]) {
     const bad = render(input);
@@ -58,6 +58,29 @@ test('the tile uses only validated public counts, never fallback roadmap people 
     assert.match(bad.html, /<h2>Commits<\/h2><div class="stat num">123/);
     for (const marker of markers) assert.ok(!(bad.html + bad.stderr).includes(marker));
   }
+});
+
+// 2026-11-23: the counts task stopped publishing and the people tile read "Data unavailable" for days. The last good file is shown with its
+// own as-of time and the Stale badge instead; a file that is invalid, from the future or not the exact schema is still unavailable.
+test('a stale but valid people file shows the last good counts with their as-of time and the Stale badge, not Data unavailable', () => {
+  for (const age of [901000, 3 * 86400000]) {
+    const old = sample(Date.now() - age), { html, tile } = render(old);
+    assert.match(tile, /class="stat num">3<\/div><span class="sub">builders/);
+    assert.match(tile, /class="stat num">2<\/div><span class="sub">reviewers/);
+    assert.doesNotMatch(tile, /Data unavailable|999|998/);
+    assert.ok(html.includes(`datetime="${old.generatedAt}"`));
+    assert.match(html, /<span\b[^>]*data-people-stale[^>]*>Stale<\/span>/);
+  }
+  for (const input of [sample(Date.now() + 3600000), { ...sample(Date.now() - 86400000), builders: markers[0] }, { ...sample(Date.now() - 86400000), schema: 2 }])
+    assert.match(render(input).tile, /Data unavailable/);
+});
+
+test('the strict reader still rejects an old file unless the caller asks for the last good one', () => {
+  const old = sample(now - 3 * 86400000);
+  withFile(old, (path) => {
+    assert.equal(readPeopleCounts(path, now), undefined);
+    assert.deepEqual(readPeopleCounts(path, now, Infinity), old);
+  });
 });
 
 test('the public people fetch has no credential or private endpoint', () => {
