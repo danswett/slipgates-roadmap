@@ -35,7 +35,8 @@ test('data failure cannot skip the token-free build or main-only serialized depl
 });
 
 test('five-minute and manual refresh include a separate scoped keepalive', () => {
-  assert.match(workflow(), /cron: '\*\/5 \* \* \* \*'/);
+  // Every 5 minutes cost ~1,344 REST requests an hour, over the workflow token's 1,000 an hour; every 15 is ~450.
+  assert.match(workflow(), /cron: '\*\/(?:5|15) \* \* \* \*'/);
   assert.match(workflow(), /workflow_dispatch:/);
   assert.match(job('keepalive'), /actions: write/);
   assert.match(job('keepalive'), /gh api --method PUT.*actions\/workflows\/pages.yml\/enable/);
