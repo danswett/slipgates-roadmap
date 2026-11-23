@@ -20,7 +20,7 @@ export function validateFleetCounts(value, now = Date.now(), maxAge = 7200000) {
   if (typeof value.generatedAt !== 'string' ||
     !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,9})?(?:Z|\+00:00)$/.test(value.generatedAt) ||
     !Number.isFinite(at) || new Date(at).toISOString().slice(0, 19) !== value.generatedAt.slice(0, 19) ||
-    age < -60000 || age > maxAge)
+    age < -60000 || age > maxAge || at < Date.parse('2025-01-01T00:00:00Z'))
     return unavailable('invalid or stale timestamp');
   const sum = (fields) => fields.reduce((total, key) => total + value[key], 0);
   if (value.prsMerged24h !== sum(hours) || value.prsMerged14d !== sum(days))

@@ -10,7 +10,7 @@ export function validatePeopleCounts(value, now = Date.now(), maxAge = 900000) {
   if (typeof value.generatedAt !== 'string' ||
     !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,9})?(?:Z|\+00:00)$/.test(value.generatedAt) ||
     !Number.isFinite(at) || new Date(at).toISOString().slice(0, 19) !== value.generatedAt.slice(0, 19) ||
-    now - at < -60000 || now - at > maxAge)
+    now - at < -60000 || now - at > maxAge || at < Date.parse('2025-01-01T00:00:00Z'))
     return unavailable();
   return value;
 }

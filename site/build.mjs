@@ -42,7 +42,8 @@ const count = (n) => {
   return 'Data unavailable';
 };
 const stats = value?.stats?.['danswett/agent-bridge'], issues = stats?.issues?.counts;
-const fleetCounts = readFleetCounts(fleet);
+// The last good counts files stay on the page with their own as-of time, whatever their age; an invalid one is still unavailable.
+const fleetCounts = readFleetCounts(fleet, Infinity);
 const glyph = (body) => `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
 const warn = glyph('<path d="M10 3l7.5 13h-15zM10 8.5v3.5M10 14.5v.01"/>');
 const clock = glyph('<circle cx="10" cy="10" r="7"/><path d="M10 6v4l2.5 2.5"/>');
@@ -54,7 +55,7 @@ const done = epics.reduce((n, e) => n + e.closed, 0), total = epics.reduce((n, e
 const tile = (title, body) => `<div class="card"><h2>${title}</h2>${body}</div>`;
 const number = (n) => { const result = count(n); return `<div class="${typeof result === 'number' ? 'stat num' : 'none'}">${result}</div>`; };
 const mergedTile = () => `<div data-live-merged data-total="${count(stats?.prsMergedTotal)}" data-recent="${count(stats?.merges?.last_24_hours)}" data-generated-at="${escape(timestamp)}">${renderMergedCounts(stats?.prsMergedTotal, stats?.merges?.last_24_hours, fleetCounts, timestamp)}</div>`;
-const peopleTile = () => `<div data-live-counts="people">${renderPeopleCounts(readPeopleCounts(people))}</div>`;
+const peopleTile = () => `<div data-live-counts="people">${renderPeopleCounts(readPeopleCounts(people, Date.now(), Infinity))}</div>`;
 const time = `<time datetime="${escape(timestamp)}">${escape(updated)}</time>`, stale = Date.now() - Date.parse(timestamp) > 15 * 60000;
 const stamp = `<span class="stamp${reason ? ' stale' : ''}">${reason ? warn : clock}<span>${stale ? 'Out of date. Last update ' : reason ? 'Data unavailable. ' : 'Updated '}${time}</span></span>`;
 const content = reason
