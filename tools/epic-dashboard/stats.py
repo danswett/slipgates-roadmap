@@ -67,8 +67,9 @@ def summarize(source, now):
     if "closed_issues" in source and "issues" in result:
         result["issues"]["resolved_per_day"] = series((i["closedAt"] for i in source["closed_issues"]), 14)
     if "commits" in source:
-        result["commits"] = {"total": source["commits"]["total"],
-                             "per_day": series((c["committedDate"] for c in source["commits"]["nodes"]), 14)}
+        result["commits"] = {"total": source["commits"]["total"]}
+        if source["commits"]["nodes"] is not None:
+            result["commits"]["per_day"] = series((c["committedDate"] for c in source["commits"]["nodes"]), 14)
     if "pulls" in source:
         start = now.astimezone(PACIFIC).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=29)
         pulls = source["pulls"]
@@ -129,6 +130,28 @@ def summarize(source, now):
     return result
 
 
+COMMIT_PAGES = 10  # pages of 100 per repo: a long history cannot starve the other repo's reads of the shared request budget
+STAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})?")
+
+
+class PageLimit(ValueError):
+    pass
+
+
+def clean_stamp(value):
+    """A timestamp as written by this tool, or None: nothing else may reach the page or the markdown."""
+    return value if isinstance(value, str) and len(value) <= 40 and STAMP.fullmatch(value) else None
+
+
+def plain(value):
+    """True for plain JSON of finite numbers: what an earlier roadmap.json can carry without breaking JSON.parse on the page."""
+    if isinstance(value, dict):
+        return all(isinstance(k, str) and plain(v) for k, v in value.items())
+    if isinstance(value, list):
+        return all(plain(v) for v in value)
+    return value is None or isinstance(value, (str, bool, int)) or (isinstance(value, float) and math.isfinite(value))
+
+
 def keep_last_good(result, repo, source, previous, previous_at):
     """A failed read keeps the earlier good value, labelled stale and never shown as fresh."""
     earlier = previous.get(repo) if isinstance(previous, dict) else None
@@ -136,10 +159,10 @@ def keep_last_good(result, repo, source, previous, previous_at):
     for key, fields, label in (("commits", ("commits",), "commits"), ("ci", ("runs",), "CI"),
                                ("merges", ("merge_counts", "pulls"), "merge counts"),
                                ("pull_requests", ("merge_counts", "pulls"), "pull request counts")):
-        if any(f in source for f in fields) or key in result or not isinstance(earlier.get(key), dict):
+        if any(f in source for f in fields) or key in result or not isinstance(earlier.get(key), dict) or not plain(earlier[key]):
             continue
         reason = next((u.split(": ", 2)[-1] for u in source["unavailable"] if u.startswith(f"Data unavailable: {repo} {fields[0]}:")), "read failed")
-        result[key] = dict(earlier[key], stale_since=earlier[key].get("stale_since") or previous_at or "an earlier run")
+        result[key] = dict(earlier[key], stale_since=clean_stamp(earlier[key].get("stale_since")) or clean_stamp(previous_at) or "an earlier run")
         result["unavailable"] = [u for u in result.get("unavailable", [])
                                  if u not in (f"Data unavailable: {label}", "Data unavailable: pull requests",
                                               f"Data unavailable: {repo} {fields[0]}: {reason}")]
@@ -189,15 +212,18 @@ def collect(run, now=None, budget=60, previous=None, previous_at=None):
             output[repo] = {"unavailable": [f"Data unavailable: {repo} is not publicly readable"]}
             return
 
-        def pages(selection, path, cutoff=None):
-            cursor, nodes = None, []
+        def pages(selection, path, cutoff=None, limit=None):
+            cursor, nodes, count = None, [], 0
             while True:
                 data = graphql("isPrivate " + selection.replace("CURSOR", json.dumps(cursor)))
                 for key in path:
                     data = data[key]
                 nodes.extend(data["nodes"])
+                count += 1
                 if not data["pageInfo"]["hasNextPage"]:
                     return nodes
+                if limit and count >= limit:
+                    raise PageLimit(f"commit history is longer than {limit} pages")
                 if cutoff and data["nodes"] and timestamp(data["nodes"][-1]["updatedAt"]) < cutoff:
                     return nodes
                 next_cursor = data["pageInfo"]["endCursor"]
@@ -225,8 +251,12 @@ def collect(run, now=None, budget=60, previous=None, previous_at=None):
             prefix = 'ref(qualifiedName:"refs/heads/main"){target{... on Commit{'
             total = graphql("isPrivate " + prefix + "history(first:0){totalCount}}}}")["ref"]["target"]["history"]["totalCount"]
             window = f'since:"{(start - timedelta(days=13)).isoformat()}",until:"{now.isoformat()}"'
-            nodes = pages(prefix + "history(first:100,after:CURSOR," + window + "){nodes{committedDate}" + page_info + "}}}}",
-                          ("ref", "target", "history"))
+            try:
+                nodes = pages(prefix + "history(first:100,after:CURSOR," + window + "){nodes{committedDate}" + page_info + "}}}}",
+                              ("ref", "target", "history"), limit=COMMIT_PAGES)
+            except PageLimit as error:  # the total is still right; the per-day series would be incomplete, so it is left out and said so
+                source["unavailable"].append(f"Data unavailable: {repo} commits per day: {error}")
+                return {"total": total, "nodes": None}
             return {"total": total, "nodes": nodes}
 
         def merge_counts():

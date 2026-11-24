@@ -1,6 +1,10 @@
 `stats.collect(run)` reads confirmed-public repos only, with one shared 60-request cap. Cheap reads (totals, commits, CI runs) go first for
 both repos; pull-request and closed-issue pagination goes last, so it can only starve itself. `--previous roadmap.json` supplies the last good
-commits and CI values when a read fails; they carry `stale_since` and the page text says `Stale: ... last good value from <time>`.
+commits, CI and merge-count values when a read fails; they carry `stale_since`. The dashboard text says `Stale: ... last good value from <time>`,
+and the Pages site shows a `Stale` badge on the Commits and Pull requests merged tiles with the same time (a carried value is never shown as fresh).
+`--previous` is checked: a value that is not plain finite JSON (a NaN, say) is ignored, and `stale_since` is kept only if it is a timestamp
+(else the file's own update time, else the fixed phrase `an earlier run`), so no other text reaches the page or the markdown. Commit paging is
+capped at 10 pages of 100 per repo (`COMMIT_PAGES`); past the cap the commit total still shows, the per-day series is left out and says why.
 Missing, private or incomplete sources omit fields with `Data unavailable`; they never become zeros.
 Daily buckets use Pacific dates; 48 hourly buckets include this hour, with explicit DST offsets.
 PRs/builders/receipt families cover 30 calendar days. Receipts match each PR's exact head.
