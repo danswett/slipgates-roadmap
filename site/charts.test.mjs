@@ -51,3 +51,36 @@ test('missing or malformed chart fields stay unavailable without hiding valid me
   assert.match(partial, /class="spark"/); assert.doesNotMatch(partial, /--h:/);
   assert.equal(partial.match(/Data unavailable/g)?.length, 1);
 });
+
+// Roadmap #37 follow-up: a chart or metric whose data was carried over from an earlier run (stale_since) says so in words
+// ("Stale" and the time, with the year), escaped, never by colour alone; fresh data shows no badge.
+const staleCount = (html) => html.match(/class="stale-badge"/g)?.length ?? 0;
+
+test('fresh chart data shows no Stale badge', () => {
+  const html = renderCharts(sample());
+  assert.equal(staleCount(html), 0);
+  assert.doesNotMatch(html, /Last good value/);
+});
+
+test('carried merges, pull requests and CI each label their own chart or metric', () => {
+  for (const [key, where] of [['merges', /Merges per hour, last 24 h<\/h2>[^]*?class="stale-badge"/],
+    ['pull_requests', /Throughput<\/h2>[^]*?class="stale-badge"/], ['ci', /Main CI time<\/h3>[^]*?class="stale-badge"/]]) {
+    const stats = sample();
+    stats[key] = { ...stats[key], stale_since: '2026-11-11T05:00:00+00:00' };
+    const html = renderCharts(stats);
+    assert.equal(staleCount(html), 1, key);
+    assert.match(html, where, key);
+    assert.match(html, /Stale<\/span>/, key);
+    assert.match(html, /Last good value from Nov 10, 2026, 9:00[\s ]PM PT/, key);
+  }
+});
+
+test('the carried time is escaped, and anything that is not a timestamp prints a fixed phrase', () => {
+  const stats = sample();
+  stats.ci = { ...stats.ci, stale_since: '<img src=x onerror=alert(1)>' };
+  stats.merges = { ...stats.merges, stale_since: 42 };
+  const html = renderCharts(stats);
+  assert.equal(staleCount(html), 2);
+  assert.doesNotMatch(html, /<img src=x/);
+  assert.equal(html.match(/Last good value from an earlier run/g)?.length, 2);
+});
