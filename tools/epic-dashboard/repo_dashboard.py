@@ -88,7 +88,7 @@ def nodes(query, path):
     return result
 
 
-def read():
+def read(last_good=None):
     epics = nodes(f'query($endCursor:String){{{ROOT}{{issues(first:100,after:$endCursor,'
                   f'labels:["epic"],states:[OPEN,CLOSED]){{{PAGE}{{{FIELDS}}}}}}}}}',
                   ("repository", "issues"))
@@ -109,7 +109,7 @@ def read():
             for repo, number in body_blockers(issue):
                 if repo == R and str(number) not in titles:
                     titles[str(number)] = json.loads(run("gh", "api", f"repos/{R}/issues/{number}"))["title"]
-    return {"epics": epics, "priority_body": priority, "blocker_titles": titles, "stats": collect(run)}
+    return {"epics": epics, "priority_body": priority, "blocker_titles": titles, "stats": collect(run, last_good=last_good)}
 
 
 def generate(snapshot, now=None):
@@ -185,9 +185,22 @@ def main():
     parser.add_argument("--json-output", type=Path, default=Path("dashboard-data.json"))
     parser.add_argument("--body-output", type=Path, default=Path("dashboard.md"))
     parser.add_argument("--write", action="store_true", help="Update only issue #755's body")
+    parser.add_argument("--last-good", type=Path, help="JSON of the last good commits and main CI time: filled in when a read fails, rewritten after a read")
     args = parser.parse_args()
+    good = {}
+    if args.last_good:
+        try:
+            good = json.loads(args.last_good.read_text(encoding="utf-8"))
+            if not isinstance(good, dict):
+                good = {}
+        except (OSError, ValueError):
+            good = {}
     try:
-        data, body = generate(read())
+        data, body = generate(read(good))
+        if args.last_good:
+            temp = args.last_good.with_name(args.last_good.name + ".tmp")
+            temp.write_text(json.dumps(good, indent=2) + "\n", encoding="utf-8")
+            temp.replace(args.last_good)
     except (subprocess.CalledProcessError, OSError, ValueError, KeyError, TypeError) as error:
         reason = (str(error) if isinstance(error, ValueError) else f"Repository read failed ({type(error).__name__})" + (f": {failure_detail(error)}" if isinstance(error, subprocess.CalledProcessError) else ""))
         data, body = {"error": reason, "epics": []}, f"# Slipgates: epic dashboard\n\nData unavailable: {reason}\n"

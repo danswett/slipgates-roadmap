@@ -36,6 +36,43 @@ class RepositoryDashboardTests(unittest.TestCase):
             self.assertIn("Data unavailable: incomplete sub-issues", body.read_text())
             self.assertEqual("incomplete sub-issues", json.loads(output.read_text())["error"])
 
+    def test_the_last_good_file_is_loaded_for_the_read_and_rewritten_after_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output, body, good = Path(directory) / "data.json", Path(directory) / "body.md", Path(directory) / "last-good.json"
+            good.write_text(json.dumps({"danswett/agent-bridge": {"commits": {"value": {"total": 5, "per_day": []}, "at": "2026-11-10T00:00:00+00:00"}}}))
+            seen = {}
+
+            def read(last_good=None):
+                seen["loaded"] = json.loads(json.dumps(last_good))
+                last_good["danswett/agent-bridge"]["ci"] = {"value": {"median_minutes": 9, "samples": 3}, "at": "2026-11-11T00:00:00+00:00"}
+                return self.fixture
+
+            argv = ["repo_dashboard", "--json-output", str(output), "--body-output", str(body), "--last-good", str(good)]
+            with patch.object(repo, "read", side_effect=read), patch("sys.argv", argv):
+                repo.main()
+            self.assertEqual(seen["loaded"]["danswett/agent-bridge"]["commits"]["value"]["total"], 5)
+            saved = json.loads(good.read_text())
+            self.assertEqual(saved["danswett/agent-bridge"]["ci"]["value"]["samples"], 3)
+            self.assertEqual(saved["danswett/agent-bridge"]["commits"]["value"]["total"], 5)
+
+    def test_a_missing_or_corrupt_last_good_file_starts_empty_and_an_unreadable_read_leaves_it_alone(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output, body, good = Path(directory) / "data.json", Path(directory) / "body.md", Path(directory) / "last-good.json"
+            argv = ["repo_dashboard", "--json-output", str(output), "--body-output", str(body), "--last-good", str(good)]
+            seen = []
+            with patch.object(repo, "read", side_effect=lambda last_good=None: seen.append(dict(last_good)) or self.fixture), patch("sys.argv", argv):
+                repo.main()
+            self.assertEqual(seen, [{}])
+            good.write_text("{ not json")
+            with patch.object(repo, "read", side_effect=lambda last_good=None: seen.append(dict(last_good)) or self.fixture), patch("sys.argv", argv):
+                repo.main()
+            self.assertEqual(seen[1], {})
+            before = json.dumps({"x": 1})
+            good.write_text(before)
+            with patch.object(repo, "read", side_effect=ValueError("incomplete sub-issues")), patch("sys.argv", argv):
+                repo.main()
+            self.assertEqual(good.read_text(), before)
+
     def test_a_failed_gh_call_says_why_in_the_unavailable_reason_without_secrets(self):
         error = subprocess.CalledProcessError(1, ["gh", "api", "graphql"], output="",
                                               stderr="gh: API rate limit exceeded for installation (HTTP 403)\nsecond line")

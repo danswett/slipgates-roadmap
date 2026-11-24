@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { renderFleetCounts, renderMergedCounts } from './fleet-counts.mjs';
 import { renderEpics, renderNeedsBlocker, renderBlockers, validEpicDetails } from './epics.mjs';
-import { renderCharts } from './charts.mjs';
+import { renderCharts, lastGoodAt } from './charts.mjs';
 import { renderPeopleCounts } from './people-at-work.mjs';
 import { readPeopleCounts, readFleetCounts } from './counts-files.mjs';
 
@@ -61,7 +61,7 @@ const content = reason
   ? `<section class="hero"><h1>Data unavailable</h1><p class="lede">The roadmap could not read its data at ${time}. It tries again every few minutes. Nothing is lost.</p>${stale ? `<p class="lede">The last good update was at ${time}.</p>` : ''}</section>`
   : `<section class="hero"><h1>Where Slipgates stands</h1><p class="lede">Progress on each epic, and how fast the work is landing. Public repository data only.</p>
 <div class="hero-bar"><div class="row"><span class="big num">${percent(done, total)}%</span><span class="lbl">${done} of ${total} planned slices done across ${epics.length} epics</span></div>${bar(done, total, 'All epics')}</div></section>
-<div class="grid tiles" aria-label="Totals">${tile('Commits', number(stats?.commits?.total) + '<div class="sub">on main, all time</div>')}
+<div class="grid tiles" aria-label="Totals">${tile('Commits', number(stats?.commits?.total) + `<div class="sub">on main, all time${lastGoodAt(stats?.asOf?.commits) ? ', ' + lastGoodAt(stats.asOf.commits) : ''}</div>`)}
 ${tile('Pull requests merged', mergedTile())}
 ${tile('Issues resolved', `<div class="stat num">${count(issues?.resolved)}<small>of ${count(issues?.total)}</small></div>` + ([issues?.resolved, issues?.total].every(Number.isSafeInteger) && issues.resolved >= 0 && issues.total >= issues.resolved ? bar(issues.resolved, issues.total, 'Issues resolved', true) : ''))}
 ${tile('People at work', peopleTile())}</div>${renderCharts(stats)}
