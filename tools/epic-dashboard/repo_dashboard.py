@@ -4,6 +4,7 @@ import html
 import json
 import re
 import subprocess
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -64,8 +65,18 @@ def blocker_details(issue, titles, labels):
     return result
 
 
-def run(*args):
-    return subprocess.run(args, capture_output=True, text=True, encoding="utf-8", check=True).stdout
+TRANSIENT = re.compile(r"HTTP 50[234]")
+
+
+def run(*args, attempts=3, pause=5):
+    """One gh call. A transient GitHub 502/503/504 is retried a few times: one such blip must not blank the whole roadmap."""
+    for attempt in range(1, attempts + 1):
+        try:
+            return subprocess.run(args, capture_output=True, text=True, encoding="utf-8", check=True).stdout
+        except subprocess.CalledProcessError as error:
+            if attempt == attempts or not TRANSIENT.search(error.stderr if isinstance(error.stderr, str) else ""):
+                raise
+            time.sleep(pause * attempt)
 
 
 def failure_detail(error):
