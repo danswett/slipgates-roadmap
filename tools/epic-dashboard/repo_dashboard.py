@@ -88,7 +88,7 @@ def nodes(query, path):
     return result
 
 
-def read():
+def read(previous=None, previous_at=None):
     epics = nodes(f'query($endCursor:String){{{ROOT}{{issues(first:100,after:$endCursor,'
                   f'labels:["epic"],states:[OPEN,CLOSED]){{{PAGE}{{{FIELDS}}}}}}}}}',
                   ("repository", "issues"))
@@ -109,7 +109,7 @@ def read():
             for repo, number in body_blockers(issue):
                 if repo == R and str(number) not in titles:
                     titles[str(number)] = json.loads(run("gh", "api", f"repos/{R}/issues/{number}"))["title"]
-    return {"epics": epics, "priority_body": priority, "blocker_titles": titles, "stats": collect(run)}
+    return {"epics": epics, "priority_body": priority, "blocker_titles": titles, "stats": collect(run, previous=previous, previous_at=previous_at)}
 
 
 def generate(snapshot, now=None):
@@ -185,9 +185,19 @@ def main():
     parser.add_argument("--json-output", type=Path, default=Path("dashboard-data.json"))
     parser.add_argument("--body-output", type=Path, default=Path("dashboard.md"))
     parser.add_argument("--write", action="store_true", help="Update only issue #755's body")
+    parser.add_argument("--previous", type=Path, help="An earlier roadmap.json: its stats are the last good values for a failed commits/CI read")
     args = parser.parse_args()
+    previous, previous_at = None, None
+    if args.previous:
+        try:
+            earlier = json.loads(args.previous.read_text(encoding="utf-8"))
+            previous, previous_at = earlier["stats"], earlier.get("updatedAt")
+            if not isinstance(previous, dict):
+                previous = previous_at = None
+        except (OSError, ValueError, KeyError, TypeError):
+            pass  # no usable earlier file: failed reads stay Data unavailable
     try:
-        data, body = generate(read())
+        data, body = generate(read(previous, previous_at))
     except (subprocess.CalledProcessError, OSError, ValueError, KeyError, TypeError) as error:
         reason = (str(error) if isinstance(error, ValueError) else f"Repository read failed ({type(error).__name__})" + (f": {failure_detail(error)}" if isinstance(error, subprocess.CalledProcessError) else ""))
         data, body = {"error": reason, "epics": []}, f"# Slipgates: epic dashboard\n\nData unavailable: {reason}\n"
