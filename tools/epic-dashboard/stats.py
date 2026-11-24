@@ -110,16 +110,37 @@ def summarize(source, now):
     return result
 
 
-def collect(run, now=None, budget=60):
-    """Share one request budget across both repos; leave room for the epic read."""
+def keep_last_good(result, repo, source, previous, previous_at):
+    """A failed commits or CI read keeps the earlier good value, labelled stale and never shown as fresh."""
+    earlier = previous.get(repo) if isinstance(previous, dict) else None
+    earlier = earlier if isinstance(earlier, dict) else {}
+    for key, field, label in (("commits", "commits", "commits"), ("ci", "runs", "CI")):
+        if field in source or key in result or not isinstance(earlier.get(key), dict):
+            continue
+        reason = next((u.split(": ", 2)[-1] for u in source["unavailable"] if u.startswith(f"Data unavailable: {repo} {field}:")), "read failed")
+        result[key] = dict(earlier[key], stale_since=earlier[key].get("stale_since") or previous_at or "an earlier run")
+        result["unavailable"] = [u for u in result.get("unavailable", [])
+                                 if u not in (f"Data unavailable: {label}", f"Data unavailable: {repo} {field}: {reason}")]
+        result["unavailable"].append(f"Stale: {repo} {label} shows the last good value from {result[key]['stale_since']}; this read failed: {reason}")
+    if not result.get("unavailable"):
+        result.pop("unavailable", None)
+    return result
+
+
+def collect(run, now=None, budget=60, previous=None, previous_at=None):
+    """Share one request budget across both repos; leave room for the epic read.
+
+    Cheap reads that feed the tiles (public check, totals, commits, CI runs) go first for BOTH repos; the long
+    pull-request and closed-issue pagination goes last, so it can only starve itself. When the commits or CI read
+    fails, `previous` (an earlier collect() result) supplies the last good value, labelled with `previous_at`."""
     now = now or datetime.now(timezone.utc)
-    remaining = budget
+    remaining, floor = budget, 0
     output = {}
     start = now.astimezone(PACIFIC).replace(hour=0, minute=0, second=0, microsecond=0)
 
     def request(endpoint, query=None):
         nonlocal remaining
-        if remaining <= 0:
+        if remaining <= floor:
             raise ValueError("request budget exhausted")
         remaining -= 1
         args = ("gh", "api", endpoint) + (("-f", "query=" + query) if query else ())
@@ -128,7 +149,9 @@ def collect(run, now=None, budget=60):
             raise ValueError("GraphQL read rejected")
         return data
 
-    for repo in ("danswett/agent-bridge", "danswett/slipgates-fleet"):
+    sources, later = {}, []
+
+    def prepare(repo):
         source = {"unavailable": []}
 
         def graphql(selection):
@@ -142,7 +165,7 @@ def collect(run, now=None, budget=60):
             graphql("isPrivate")
         except (CalledProcessError, ValueError, KeyError, TypeError):
             output[repo] = {"unavailable": [f"Data unavailable: {repo} is not publicly readable"]}
-            continue
+            return
 
         def pages(selection, path, cutoff=None):
             cursor, nodes = None, []
@@ -176,13 +199,6 @@ def collect(run, now=None, budget=60):
 
         page_info = "pageInfo{hasNextPage endCursor}"
         load("issue_counts", totals)
-        load("closed_issues", lambda: pages("issues(first:100,after:CURSOR,states:CLOSED,orderBy:{field:UPDATED_AT,direction:DESC})"
-                                          "{nodes{closedAt updatedAt}" + page_info + "}", ("issues",), start - timedelta(days=13)))
-        load("pulls", lambda: pages("pullRequests(first:50,after:CURSOR,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{"
-                                  "createdAt updatedAt mergedAt headRefOid author{login} comments(first:100){nodes{body authorAssociation}pageInfo{hasNextPage}}"
-                                  "timelineItems(first:100,itemTypes:[LABELED_EVENT]){nodes{... on LabeledEvent{createdAt label{name}}}"
-                                  "pageInfo{hasNextPage}}}" + page_info + "}", ("pullRequests",), start - timedelta(days=29)))
-
         def commits():
             prefix = 'ref(qualifiedName:"refs/heads/main"){target{... on Commit{'
             total = graphql("isPrivate " + prefix + "history(first:0){totalCount}}}}")["ref"]["target"]["history"]["totalCount"]
@@ -193,5 +209,24 @@ def collect(run, now=None, budget=60):
 
         load("commits", commits)
         load("runs", lambda: request(f"repos/{repo}/actions/workflows/ci.yml/runs?branch=main&status=completed&per_page=100")["workflow_runs"])
-        output[repo] = summarize(source, now)
-    return output
+
+        def long_reads():
+            load("closed_issues", lambda: pages("issues(first:100,after:CURSOR,states:CLOSED,orderBy:{field:UPDATED_AT,direction:DESC})"
+                                              "{nodes{closedAt updatedAt}" + page_info + "}", ("issues",), start - timedelta(days=13)))
+            load("pulls", lambda: pages("pullRequests(first:50,after:CURSOR,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{"
+                                      "createdAt updatedAt mergedAt headRefOid author{login} comments(first:100){nodes{body authorAssociation}pageInfo{hasNextPage}}"
+                                      "timelineItems(first:100,itemTypes:[LABELED_EVENT]){nodes{... on LabeledEvent{createdAt label{name}}}"
+                                      "pageInfo{hasNextPage}}}" + page_info + "}", ("pullRequests",), start - timedelta(days=29)))
+
+        sources[repo] = source
+        later.append(long_reads)
+
+    repos = ("danswett/agent-bridge", "danswett/slipgates-fleet")
+    for repo in repos:
+        prepare(repo)
+    left = remaining  # the long reads share what is left evenly, so one repo cannot starve the other
+    for index, long_reads in enumerate(later):
+        floor = left - left * (index + 1) // len(later) if index < len(later) - 1 else 0
+        long_reads()
+    return {repo: output[repo] if repo in output else keep_last_good(summarize(sources[repo], now), repo, sources[repo],
+                                                                      previous, previous_at) for repo in repos}

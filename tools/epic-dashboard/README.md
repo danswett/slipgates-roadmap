@@ -1,4 +1,6 @@
-`stats.collect(run)` reads confirmed-public repos only, with one shared 60-request cap.
+`stats.collect(run)` reads confirmed-public repos only, with one shared 60-request cap. Cheap reads (totals, commits, CI runs) go first for
+both repos; pull-request and closed-issue pagination goes last, so it can only starve itself. `--previous roadmap.json` supplies the last good
+commits and CI values when a read fails; they carry `stale_since` and the page text says `Stale: ... last good value from <time>`.
 Missing, private or incomplete sources omit fields with `Data unavailable`; they never become zeros.
 Daily buckets use Pacific dates; 48 hourly buckets include this hour, with explicit DST offsets.
 PRs/builders/receipt families cover 30 calendar days. Receipts match each PR's exact head.

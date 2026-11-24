@@ -1,6 +1,7 @@
 import unittest
 import json
 from datetime import datetime, timedelta, timezone
+from subprocess import CalledProcessError
 from stats import collect, summarize
 
 
@@ -172,3 +173,77 @@ class ThroughputTests(unittest.TestCase):
         self.assertNotIn("issues", collect(run, NOW)["danswett/agent-bridge"])
         self.assertEqual(len(calls), 2)
         self.assertTrue(all(args[2] == "graphql" and "open:issues" not in args[-1] for args in calls))
+
+
+class CheapReadsFirstAndLastGoodTests(unittest.TestCase):
+    def stub(self, fail=(), endless=True):
+        calls = []
+
+        def run(*args):
+            calls.append(args)
+            if args[2] != "graphql":
+                if "runs" in fail:
+                    raise CalledProcessError(1, "gh")
+                return json.dumps({"workflow_runs": fixture()["runs"]})
+            query = args[-1]
+            repo = {"isPrivate": False}
+            if "open:issues" in query:
+                repo.update(open={"totalCount": 4}, resolved={"totalCount": 6}, merged={"totalCount": 3})
+            elif "pullRequests(first" in query and endless:  # a long history: every page has another page
+                n = sum("pullRequests(first" in c[-1] for c in calls)
+                repo["pullRequests"] = {"nodes": [{"createdAt": ago(1), "updatedAt": ago(1), "mergedAt": None}],
+                                        "pageInfo": {"hasNextPage": True, "endCursor": f"c{n}"}}
+            elif "issues(first" in query:
+                repo["issues"] = {"nodes": [], "pageInfo": {"hasNextPage": False, "endCursor": None}}
+            elif "pullRequests(first" in query:
+                repo["pullRequests"] = {"nodes": [], "pageInfo": {"hasNextPage": False, "endCursor": None}}
+            elif "history(first:0)" in query:
+                if "commits" in fail:
+                    raise CalledProcessError(1, "gh")
+                repo["ref"] = {"target": {"history": {"totalCount": 1234}}}
+            elif "history(first:100" in query:
+                repo["ref"] = {"target": {"history": {"nodes": fixture()["commits"]["nodes"],
+                                                      "pageInfo": {"hasNextPage": False, "endCursor": None}}}}
+            return json.dumps({"data": {"repository": repo}})
+        return run, calls
+
+    def test_endless_pull_history_cannot_starve_commits_and_ci_of_either_repo(self):
+        run, calls = self.stub()
+        data = collect(run, NOW)  # the real 60-request budget
+        self.assertEqual(len(calls), 60)
+        for repo in ("danswett/agent-bridge", "danswett/slipgates-fleet"):
+            self.assertEqual(data[repo]["commits"]["total"], 1234, repo)
+            self.assertIn("median_minutes", data[repo]["ci"], repo)
+            self.assertTrue(any("pulls" in u and "request budget exhausted" in u for u in data[repo]["unavailable"]), repo)
+            self.assertIn("resolved_per_day", data[repo]["issues"], repo)  # the other long read still ran in each repo
+
+    def test_failed_commits_and_ci_reads_keep_the_last_good_value_and_say_so(self):
+        run, _ = self.stub()
+        earlier = collect(run, NOW)
+        run, _ = self.stub(fail=("commits", "runs"))
+        data = collect(run, NOW, previous=earlier, previous_at="2026-11-11T05:00:00+00:00")
+        repo = data["danswett/agent-bridge"]
+        self.assertEqual(repo["commits"]["total"], 1234)
+        self.assertEqual(repo["commits"]["stale_since"], "2026-11-11T05:00:00+00:00")
+        self.assertEqual(repo["ci"]["stale_since"], "2026-11-11T05:00:00+00:00")
+        notes = " | ".join(repo["unavailable"])
+        self.assertIn("Stale: danswett/agent-bridge commits shows the last good value from 2026-11-11T05:00:00+00:00", notes)
+        self.assertNotIn("Data unavailable: commits", notes)
+        again = collect(run, NOW, previous=data, previous_at="2026-11-11T05:05:00+00:00")  # still failing: original time kept
+        self.assertEqual(again["danswett/agent-bridge"]["commits"]["stale_since"], "2026-11-11T05:00:00+00:00")
+        self.assertIn("last good value from 2026-11-11T05:00:00+00:00", " | ".join(again["danswett/agent-bridge"]["unavailable"]))
+
+    def test_malformed_previous_is_ignored_not_fatal(self):
+        run, _ = self.stub(fail=("commits",))
+        for bad in ([1], {"danswett/agent-bridge": "x"}, {"danswett/agent-bridge": {"commits": "x", "ci": 3}}):
+            data = collect(run, NOW, previous=bad, previous_at="t")
+            self.assertNotIn("commits", data["danswett/agent-bridge"])
+
+    def test_no_earlier_value_stays_unavailable_never_zero_and_fresh_read_is_not_marked_stale(self):
+        run, _ = self.stub(fail=("commits",))
+        data = collect(run, NOW)
+        self.assertNotIn("commits", data["danswett/agent-bridge"])
+        self.assertIn("Data unavailable: commits", data["danswett/agent-bridge"]["unavailable"])
+        run, _ = self.stub()
+        fresh = collect(run, NOW, previous=data, previous_at="x")
+        self.assertNotIn("stale_since", fresh["danswett/agent-bridge"]["commits"])
