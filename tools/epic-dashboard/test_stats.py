@@ -254,6 +254,18 @@ class CheapReadsFirstAndLastGoodTests(unittest.TestCase):
             self.assertNotIn("Data unavailable: pull requests", text)
             self.assertNotIn("builders", stats)
 
+    def test_median_ignores_old_merges_in_the_sample_and_falls_back_to_the_full_history(self):
+        source = fixture()
+        source["merge_counts"] = {"rolling": {"last_hour": 0, "last_24_hours": 0, "last_7_days": 0}, "per_hour": [],
+                                  "merged_per_day": [], "opened_per_day": []}
+        source["merged_sample"] = [{"createdAt": ago(1000), "mergedAt": ago(40 * 24)},  # touched this week, merged 40 days ago
+                                   {"createdAt": ago(30), "mergedAt": ago(6)}]
+        self.assertEqual(summarize(source, NOW)["pull_requests"]["median_hours_to_merge"], 24)
+        del source["merged_sample"]  # the sample read failed, but the full history loaded
+        self.assertEqual(summarize(source, NOW)["pull_requests"]["median_hours_to_merge"], 24)
+        del source["pulls"]
+        self.assertIn("Data unavailable: median time to merge", summarize(source, NOW)["unavailable"])
+
     def test_a_failed_search_read_keeps_the_last_good_merge_tiles_and_says_so(self):
         run, _ = self.stub()
         earlier = collect(run, NOW)

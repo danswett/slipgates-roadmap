@@ -47,8 +47,13 @@ def summarize(source, now):
         counts = source["merge_counts"]
         result["merges"] = dict(counts["rolling"], per_hour=counts["per_hour"])
         result["pull_requests"] = {"opened_per_day": counts["opened_per_day"], "merged_per_day": counts["merged_per_day"]}
+        window_start = now - timedelta(days=30)  # the sample is the latest updated merged PRs: keep only those merged in the 30 days
         durations = [(timestamp(p["mergedAt"]) - timestamp(p["createdAt"])).total_seconds() / 3600
-                     for p in source.get("merged_sample", []) if p.get("mergedAt") and p.get("createdAt")]
+                     for p in source.get("merged_sample", []) if p.get("mergedAt") and p.get("createdAt")
+                     and window_start <= timestamp(p["mergedAt"]) <= now]
+        if not durations:  # the sample read failed or is empty: the full history, when it loaded, gives the same median
+            durations = [(timestamp(p["mergedAt"]) - timestamp(p["createdAt"])).total_seconds() / 3600
+                         for p in source.get("pulls", []) if p.get("mergedAt") and window_start <= timestamp(p["mergedAt"]) <= now]
         if durations:
             result["pull_requests"]["median_hours_to_merge"] = median(durations)
         else:
