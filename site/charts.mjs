@@ -44,5 +44,13 @@ export function renderCharts(stats) {
   return `<div class="grid charts"><section class="card" aria-labelledby="h-mph"><h2 id="h-mph">Merges per hour, last 24 h</h2>${hours ? hourly : unavailable('hourly merges')}</section>
 <section class="card" aria-labelledby="h-throughput"><h2 id="h-throughput">Throughput</h2>${days ? daily : unavailable('daily merged PRs')}
 <div class="grid metrics"><div><h3>Median time to merge</h3>${metric(stats?.pull_requests?.median_hours_to_merge, true)}</div>
-<div><h3>Main CI time</h3>${metric(stats?.ci?.median_minutes, false)}</div></div></section></div>`;
+<div><h3>Main CI time</h3>${metric(stats?.ci?.median_minutes, false)}${lastGoodAt(stats?.asOf?.ci) ? `<div class="sub">${lastGoodAt(stats.asOf.ci)}</div>` : ''}</div></div></section></div>`;
+}
+
+// The last good value of a read that failed (stats.asOf, set by the data job) is said to be last good, with its own as-of time; anything
+// that is not an ISO time is ignored, never printed.
+export function lastGoodAt(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d/.test(value) || !Number.isFinite(Date.parse(value))) return '';
+  return 'last good, as of ' + new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric',
+    hour: 'numeric', minute: '2-digit' }).format(new Date(value)) + ' PT';
 }

@@ -1,5 +1,6 @@
 import unittest
 import json
+import subprocess
 from datetime import datetime, timedelta, timezone
 from stats import collect, summarize
 
@@ -172,3 +173,86 @@ class ThroughputTests(unittest.TestCase):
         self.assertNotIn("issues", collect(run, NOW)["danswett/agent-bridge"])
         self.assertEqual(len(calls), 2)
         self.assertTrue(all(args[2] == "graphql" and "open:issues" not in args[-1] for args in calls))
+
+
+# 2026-11-23: "Commits" and "Main CI time" read "Data unavailable" on the roadmap. The shared 60-request budget was used up by the
+# pull request pagination (50 a page, back 29 days), so the cheap reads that came after it logged "request budget exhausted".
+# Cheap reads go first, each read has its own cap, and the pagination only gets what is left of the repository's share.
+class BudgetAndLastGoodTests(unittest.TestCase):
+    def runner(self, calls, fail=()):
+        """gh fake: pull request pages never run out (hasNextPage always true), everything else is the fixture."""
+        def run(*args):
+            calls.append(args)
+            if args[2] != "graphql":
+                if "runs" in fail:
+                    raise subprocess.CalledProcessError(1, args)
+                return json.dumps({"workflow_runs": fixture()["runs"]})
+            query = args[-1]
+            page = {"hasNextPage": True, "endCursor": "c%d" % len(calls)}
+            if "open:issues" in query:
+                data = {"open": {"totalCount": 4}, "resolved": {"totalCount": 6}, "merged": {"totalCount": 3}}
+            elif "issues(first" in query:
+                data = {"issues": {"nodes": [{"closedAt": ago(1), "updatedAt": ago(1)}], "pageInfo": page}}
+            elif "pullRequests(first" in query:
+                data = {"pullRequests": {"nodes": fixture()["pulls"], "pageInfo": page}}
+            elif "history(first:0)" in query:
+                if "commits" in fail:
+                    raise subprocess.CalledProcessError(1, args)
+                data = {"ref": {"target": {"history": {"totalCount": 1234}}}}
+            else:
+                data = {"ref": {"target": {"history": {"nodes": fixture()["commits"]["nodes"],
+                                                       "pageInfo": {"hasNextPage": False, "endCursor": None}}}}}
+            return json.dumps({"data": {"repository": dict(data, isPrivate=False)}})
+        return run
+
+    def test_endless_pull_request_pages_cannot_use_up_the_commit_and_ci_reads(self):
+        calls = []
+        data = collect(self.runner(calls), NOW, budget=60)
+        self.assertLessEqual(len(calls), 60)
+        for repo in ("danswett/agent-bridge", "danswett/slipgates-fleet"):
+            self.assertEqual(data[repo]["commits"]["total"], 1234, repo)
+            self.assertEqual(data[repo]["ci"]["samples"], 3, repo)
+            self.assertEqual(data[repo]["issues"]["counts"]["total"], 10, repo)
+            self.assertFalse([u for u in data[repo].get("unavailable", []) if " commits" in u or " runs" in u], repo)
+        # the pagination is what is cut short, and it says so
+        self.assertTrue(any("request budget exhausted" in u for u in data["danswett/agent-bridge"]["unavailable"]))
+
+    def test_the_cheap_reads_go_before_the_long_paginations(self):
+        calls = []
+        collect(self.runner(calls), NOW, budget=60)
+        kinds = ["pulls" if "pullRequests(first" in a[-1] else "commits" if "history(first" in a[-1] else "runs" if a[2] != "graphql" else "other"
+                 for a in calls[:12]]
+        self.assertLess(kinds.index("commits"), kinds.index("pulls"))
+        self.assertLess(kinds.index("runs"), kinds.index("pulls"))
+
+    def test_each_repository_gets_its_share_of_the_budget(self):
+        calls = []
+        data = collect(self.runner(calls), NOW, budget=20)
+        self.assertLessEqual(len(calls), 20)
+        self.assertIn("commits", data["danswett/slipgates-fleet"])
+        self.assertIn("ci", data["danswett/slipgates-fleet"])
+
+    def test_a_failed_read_shows_the_last_good_value_with_its_as_of_time(self):
+        good = {}
+        collect(self.runner([]), NOW, budget=60, last_good=good)
+        self.assertEqual(good["danswett/agent-bridge"]["commits"]["value"]["total"], 1234)
+        later = NOW + timedelta(hours=3)
+        data = collect(self.runner([], fail=("commits", "runs")), later, budget=60, last_good=good)
+        repo = data["danswett/agent-bridge"]
+        self.assertEqual(repo["commits"]["total"], 1234)
+        self.assertEqual(repo["ci"]["samples"], 3)
+        self.assertEqual(repo["asOf"], {"commits": NOW.isoformat(), "ci": NOW.isoformat()})
+        self.assertFalse([u for u in repo.get("unavailable", []) if u.startswith("Data unavailable") and (" commits" in u or " runs" in u)])
+        self.assertTrue(any("last good" in u and "commits" in u for u in repo["unavailable"]))
+
+    def test_a_fresh_read_replaces_the_last_good_value_and_clears_the_as_of(self):
+        good = {"danswett/agent-bridge": {"commits": {"value": {"total": 1, "per_day": []}, "at": ago(48)}}}
+        data = collect(self.runner([]), NOW, budget=60, last_good=good)
+        self.assertEqual(data["danswett/agent-bridge"]["commits"]["total"], 1234)
+        self.assertNotIn("asOf", data["danswett/agent-bridge"])
+        self.assertEqual(good["danswett/agent-bridge"]["commits"]["at"], NOW.isoformat())
+
+    def test_with_no_last_good_a_failed_read_stays_unavailable_never_a_number(self):
+        data = collect(self.runner([], fail=("commits",)), NOW, budget=60, last_good={})
+        self.assertNotIn("commits", data["danswett/agent-bridge"])
+        self.assertTrue(any(" commits" in u for u in data["danswett/agent-bridge"]["unavailable"]))

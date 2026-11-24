@@ -110,25 +110,52 @@ def summarize(source, now):
     return result
 
 
-def collect(run, now=None, budget=60):
-    """Share one request budget across both repos; leave room for the epic read."""
+def apply_last_good(result, good, now):
+    """Commits and main CI time keep their LAST GOOD value when a read fails (2026-11-23: they read "Data unavailable" for days). A
+    fresh value replaces the stored one; a missing one is filled from it, with its as-of time in result["asOf"] so the page says so.
+    With nothing stored it stays unavailable, never a number."""
+    stale = {}
+    for key in ("commits", "ci"):
+        if key in result:
+            good[key] = {"value": result[key], "at": now.isoformat()}
+        elif key in good:
+            result[key] = good[key]["value"]
+            stale[key] = good[key]["at"]
+    if stale:
+        result["asOf"] = stale
+        words = [w for key, ws in (("commits", (" commits",)), ("ci", (" runs", " CI"))) if key in stale for w in ws]
+        lines = [u for u in result.get("unavailable", []) if not any(w in u for w in words)]
+        lines += [f"Showing the last good {'commits' if key == 'commits' else 'main CI time'} (as of {at})" for key, at in stale.items()]
+        result["unavailable"] = lines
+
+
+def collect(run, now=None, budget=60, last_good=None):
+    """Share one request budget across both repos (each gets its share of what is left); leave room for the epic read. The cheap reads (totals,
+    commits, CI runs) go BEFORE the long paginations and each read has its own cap, so a pull request pagination that never ends cannot use
+    up the budget of the reads after it (2026-11-23). last_good, when given, is updated in place and fills a failed commits or CI read."""
     now = now or datetime.now(timezone.utc)
     remaining = budget
+    reserve = 0
+    scope = None
     output = {}
     start = now.astimezone(PACIFIC).replace(hour=0, minute=0, second=0, microsecond=0)
 
     def request(endpoint, query=None):
-        nonlocal remaining
-        if remaining <= 0:
+        nonlocal remaining, scope
+        if remaining <= reserve or (scope is not None and scope <= 0):
             raise ValueError("request budget exhausted")
         remaining -= 1
+        if scope is not None:
+            scope -= 1
         args = ("gh", "api", endpoint) + (("-f", "query=" + query) if query else ())
         data = json.loads(run(*args))
         if isinstance(data, dict) and data.get("errors"):
             raise ValueError("GraphQL read rejected")
         return data
 
-    for repo in ("danswett/agent-bridge", "danswett/slipgates-fleet"):
+    repos = ("danswett/agent-bridge", "danswett/slipgates-fleet")
+    for index, repo in enumerate(repos):
+        reserve = remaining - remaining // (len(repos) - index)  # what the later repositories keep
         source = {"unavailable": []}
 
         def graphql(selection):
@@ -160,12 +187,16 @@ def collect(run, now=None, budget=60):
                     raise ValueError("pagination did not advance")
                 cursor = next_cursor
 
-        def load(field, reader):
+        def load(field, reader, cap=None):
+            nonlocal scope
+            scope = cap
             try:
                 source[field] = reader()
             except (CalledProcessError, ValueError, KeyError, TypeError) as error:
                 reason = str(error) if isinstance(error, ValueError) else "public API read failed or malformed response"
                 source["unavailable"].append(f"Data unavailable: {repo} {field}: {reason}")
+            finally:
+                scope = None
 
         def totals():
             data = graphql("isPrivate open:issues(states:OPEN){totalCount} resolved:issues(states:CLOSED){totalCount}"
@@ -175,14 +206,6 @@ def collect(run, now=None, budget=60):
             return {"total": opened + resolved, "open": opened, "resolved": resolved}
 
         page_info = "pageInfo{hasNextPage endCursor}"
-        load("issue_counts", totals)
-        load("closed_issues", lambda: pages("issues(first:100,after:CURSOR,states:CLOSED,orderBy:{field:UPDATED_AT,direction:DESC})"
-                                          "{nodes{closedAt updatedAt}" + page_info + "}", ("issues",), start - timedelta(days=13)))
-        load("pulls", lambda: pages("pullRequests(first:50,after:CURSOR,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{"
-                                  "createdAt updatedAt mergedAt headRefOid author{login} comments(first:100){nodes{body authorAssociation}pageInfo{hasNextPage}}"
-                                  "timelineItems(first:100,itemTypes:[LABELED_EVENT]){nodes{... on LabeledEvent{createdAt label{name}}}"
-                                  "pageInfo{hasNextPage}}}" + page_info + "}", ("pullRequests",), start - timedelta(days=29)))
-
         def commits():
             prefix = 'ref(qualifiedName:"refs/heads/main"){target{... on Commit{'
             total = graphql("isPrivate " + prefix + "history(first:0){totalCount}}}}")["ref"]["target"]["history"]["totalCount"]
@@ -191,7 +214,17 @@ def collect(run, now=None, budget=60):
                           ("ref", "target", "history"))
             return {"total": total, "nodes": nodes}
 
-        load("commits", commits)
-        load("runs", lambda: request(f"repos/{repo}/actions/workflows/ci.yml/runs?branch=main&status=completed&per_page=100")["workflow_runs"])
+        load("issue_counts", totals, 2)
+        load("commits", commits, 8)
+        load("runs", lambda: request(f"repos/{repo}/actions/workflows/ci.yml/runs?branch=main&status=completed&per_page=100")["workflow_runs"], 1)
+        load("closed_issues", lambda: pages("issues(first:100,after:CURSOR,states:CLOSED,orderBy:{field:UPDATED_AT,direction:DESC})"
+                                          "{nodes{closedAt updatedAt}" + page_info + "}", ("issues",), start - timedelta(days=13)), 6)
+        load("pulls", lambda: pages("pullRequests(first:50,after:CURSOR,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{"
+                                  "createdAt updatedAt mergedAt headRefOid author{login} comments(first:100){nodes{body authorAssociation}pageInfo{hasNextPage}}"
+                                  "timelineItems(first:100,itemTypes:[LABELED_EVENT]){nodes{... on LabeledEvent{createdAt label{name}}}"
+                                  "pageInfo{hasNextPage}}}" + page_info + "}", ("pullRequests",), start - timedelta(days=29)))
+
         output[repo] = summarize(source, now)
+        if last_good is not None:
+            apply_last_good(output[repo], last_good.setdefault(repo, {}), now)
     return output
