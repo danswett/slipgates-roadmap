@@ -311,3 +311,113 @@ class CheapReadsFirstAndLastGoodTests(unittest.TestCase):
         run, _ = self.stub()
         fresh = collect(run, NOW, previous=data, previous_at="x")
         self.assertNotIn("stale_since", fresh["danswett/agent-bridge"]["commits"])
+
+
+class SearchWindowAndBudgetTests(unittest.TestCase):
+    """Roadmap #41 (review notes on #40): pin the search windows and fields, run the merge counts before the commit
+    paging, and do not spend the budget on a PR read that cannot finish."""
+
+    def search_run(self, counts=None, endless_commits=False):
+        """The cheap-reads stub with its search answers replaced: h{i} is i, m{i} is 100 + i, o{i} is 200 + i."""
+        import re
+        inner, calls = CheapReadsFirstAndLastGoodTests.stub(None)
+        searches = []
+
+        def run(*args):
+            query = args[-1]
+            if "search(" in query:
+                searches.append(query)
+                def value(name):
+                    if counts and name in counts:
+                        return counts[name]
+                    base = {"h": 0, "m": 100, "o": 200}
+                    return base[name[0]] + int(name[1:]) if name[0] in base and name[1:].isdigit() else {"r1": 1, "r24": 5, "r168": 20}.get(name, 4)
+                calls.append(args)
+                return json.dumps({"data": {name: {"issueCount": value(name)} for name in re.findall(r"(\w+):search\(", query)}})
+            if endless_commits and "history(first:100" in query:
+                calls.append(args)
+                page = {"hasNextPage": True, "endCursor": f"k{len(calls)}"}
+                return json.dumps({"data": {"repository": {"isPrivate": False, "ref": {"target": {"history": {
+                    "nodes": [{"committedDate": ago(1)}], "pageInfo": page}}}}}})
+            return inner(*args)
+        return run, calls, searches
+
+    def queries(self, now):
+        run, _, searches = self.search_run()
+        data = collect(run, now)
+        import re
+        found = {}
+        for text in searches[:2]:  # the first repo's two search requests
+            for name, query in re.findall(r'(\w+):search\(query:"([^"]*)"', text):
+                found[name] = query
+        return data["danswett/agent-bridge"], found
+
+    def test_day_windows_follow_the_pacific_midnights_including_the_25_and_23_hour_days(self):
+        _, fall = self.queries(datetime(2026, 11, 2, 20, tzinfo=timezone.utc))
+        self.assertIn("is:merged merged:2026-11-01T07:00:00Z..2026-11-02T07:59:59Z", [q.split("is:pr ", 1)[1] for q in fall.values()])
+        _, spring = self.queries(datetime(2026, 3, 10, 20, tzinfo=timezone.utc))
+        self.assertIn("created:2026-03-08T08:00:00Z..2026-03-09T06:59:59Z", [q.split("is:pr ", 1)[1] for q in spring.values()])
+
+    def test_day_and_hour_buckets_are_contiguous_so_a_boundary_second_is_in_exactly_one(self):
+        import re
+        _, found = self.queries(NOW)
+        for prefix, pattern in (("m", r"merged:(\S+)\.\.(\S+)$"), ("h", r"merged:(\S+)\.\.(\S+)$")):
+            spans = [re.search(pattern, found[name]).groups() for name in sorted(n for n in found if n[0] == prefix and n[1:].isdigit())]
+            parse = lambda value: datetime.fromisoformat(value.replace("Z", "+00:00"))
+            for (_, high), (low, _) in zip(spans, spans[1:]):
+                self.assertEqual(parse(high) + timedelta(seconds=1), parse(low), prefix)
+        self.assertTrue(found["h47"].endswith("2026-11-11T05:00:00Z..2026-11-11T05:30:00Z"))  # the last hour stops at now
+        self.assertTrue(found["m29"].endswith("..2026-11-11T05:30:00Z"))  # today stops at now
+
+    def test_merged_and_opened_use_their_own_fields_and_the_rolling_windows_are_exact(self):
+        data, found = self.queries(NOW)
+        for name, query in found.items():
+            if name[0] == "m" and name[1:].isdigit():
+                self.assertIn("is:merged merged:", query)
+                self.assertNotIn("created:", query)
+            if name[0] == "o":
+                self.assertIn(" created:", query)
+                self.assertNotIn("is:merged", query)
+        self.assertEqual([d["count"] for d in data["pull_requests"]["merged_per_day"]], [100 + i for i in range(30)])
+        self.assertEqual([d["count"] for d in data["pull_requests"]["opened_per_day"]], [200 + i for i in range(30)])
+        for name, stamp in (("r1", "2026-11-11T04:30:00Z"), ("r24", "2026-11-10T05:30:00Z"), ("r168", "2026-11-04T05:30:00Z")):
+            self.assertTrue(found[name].endswith(f"is:merged merged:>={stamp}"), name)
+
+    def test_the_hourly_series_is_oldest_first_and_ends_at_the_current_hour(self):
+        data, _ = self.queries(NOW)
+        hours = data["merges"]["per_hour"]
+        self.assertEqual([h["count"] for h in hours], list(range(48)))
+        self.assertEqual(hours[-1]["at"], "2026-11-10T21:00:00-08:00")
+        self.assertEqual(hours[0]["at"], "2026-11-08T22:00:00-08:00")
+
+    def test_the_median_comes_from_the_merged_sample_before_the_full_history(self):
+        source = fixture()
+        source["merge_counts"] = {"rolling": {"last_hour": 0, "last_24_hours": 0, "last_7_days": 0}, "per_hour": [],
+                                  "merged_per_day": [], "opened_per_day": []}
+        source["merged_sample"] = [{"createdAt": ago(16), "mergedAt": ago(6)}]  # 10 hours
+        source["pulls"] = [{"createdAt": ago(106), "mergedAt": ago(6)}]  # 100 hours
+        self.assertEqual(summarize(source, NOW)["pull_requests"]["median_hours_to_merge"], 10)
+
+    def test_merge_counts_do_not_depend_on_commit_volume(self):
+        run, _, _ = self.search_run(endless_commits=True)
+        data = collect(run, NOW, budget=10)  # the commit paging alone would use all of it
+        self.assertEqual(len(data["danswett/agent-bridge"]["merges"]["per_hour"]), 48)
+        self.assertEqual(len(data["danswett/agent-bridge"]["pull_requests"]["merged_per_day"]), 30)
+
+    def test_a_pull_request_read_that_cannot_finish_is_not_started_and_says_why(self):
+        run, calls, _ = self.search_run(counts={"u": 2168})  # 2,168 PRs updated in 30 days: 44 pages of 50
+        data = collect(run, NOW)
+        self.assertFalse(any("timelineItems" in c[-1] for c in calls), "the heavy read must not start")
+        self.assertLess(len(calls), 60)
+        for repo in ("danswett/agent-bridge", "danswett/slipgates-fleet"):
+            text = " | ".join(data[repo]["unavailable"])
+            self.assertIn("pulls: 2168 pull requests updated in 30 days need 44 requests", text, repo)
+            self.assertNotIn("request budget exhausted", text, repo)
+            self.assertIn("builders, review receipts and ready latency", text, repo)
+            self.assertIn("resolved_per_day", data[repo]["issues"], repo)
+            self.assertEqual(len(data[repo]["merges"]["per_hour"]), 48, repo)
+
+    def test_a_pull_request_read_that_fits_still_runs(self):
+        run, calls, _ = self.search_run(counts={"u": 100})
+        collect(run, NOW)
+        self.assertTrue(any("timelineItems" in c[-1] for c in calls))
