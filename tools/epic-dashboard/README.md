@@ -7,3 +7,7 @@ PRs/builders/receipt families cover 30 calendar days. Receipts match each PR's e
 Only receipts with authorAssociation OWNER, MEMBER or COLLABORATOR count; missing or other values do not.
 Ready latency uses the earliest `ready` label, median and nearest-rank p90, with sample count.
 CI latency is run-start to update for the latest 100 completed main `ci.yml` runs named `CI`.
+Merge tiles (per hour, per day, rolling 1 h/24 h/7 d, opened per day) come from GraphQL search `issueCount` aliases, two requests per repo however
+long the PR history is; median time to merge is from one light page of the latest 100 merged PRs (a sample, not all 30 days). Builders, review
+receipts and ready latency still need the full 30-day PR history, read last with what budget is left; if it is cut short only those are
+`Data unavailable`, never the merge tiles. A failed merge-count read keeps the last good value (`--previous`), labelled stale.

@@ -149,6 +149,10 @@ class ThroughputTests(unittest.TestCase):
                 second = 'after:"next"' in query
                 data = {"issues": {"nodes": [{"closedAt": ago(400 if second else 1), "updatedAt": ago(400 if second else 1)}],
                                    "pageInfo": {"hasNextPage": True, "endCursor": "last" if second else "next"}}}
+            elif "states:MERGED,orderBy" in query:
+                data = {"pullRequests": {"nodes": [{"createdAt": ago(30), "mergedAt": ago(6)}], "pageInfo": page}}
+            elif "search(" in query:
+                raise ValueError("search not available in this fixture")  # the old full-history path still works
             elif "pullRequests(first" in query:
                 self.assertIn("authorAssociation", query)
                 data = {"pullRequests": {"nodes": fixture()["pulls"], "pageInfo": page}}
@@ -159,8 +163,8 @@ class ThroughputTests(unittest.TestCase):
             return json.dumps({"data": {"repository": dict(data, isPrivate=True if private else False)}})
 
         private = False
-        data = collect(run, NOW, budget=16)
-        self.assertEqual(len(calls), 16)
+        data = collect(run, NOW, budget=20)
+        self.assertEqual(len(calls), 20)
         self.assertEqual(data["danswett/agent-bridge"]["commits"]["total"], 1234)
         self.assertEqual(data["danswett/agent-bridge"]["prsMergedTotal"], 4)
         self.assertEqual(data["danswett/agent-bridge"]["merges"]["last_24_hours"], 3)
@@ -187,7 +191,17 @@ class CheapReadsFirstAndLastGoodTests(unittest.TestCase):
                 return json.dumps({"workflow_runs": fixture()["runs"]})
             query = args[-1]
             repo = {"isPrivate": False}
-            if "open:issues" in query:
+            if "repository(" in query and "isPrivate" not in query:  # the real API answers nothing the page may trust without it
+                return json.dumps({"data": {"repository": {}}})
+            if "search(" in query:  # merge counts: one GraphQL request of issueCount aliases, no PR paging
+                import re
+                known = {"r1": 1, "r24": 5, "r168": 20}
+                return json.dumps({"data": {name: {"issueCount": known.get(name, 2 if name[0] == "h" else 3 if name[0] == "m" else 4)}
+                                            for name in re.findall(r"(\w+):search\(", query)}})
+            if "states:MERGED,orderBy" in query:  # the light sample of the latest merged PRs
+                repo["pullRequests"] = {"nodes": [{"createdAt": ago(30), "mergedAt": ago(6)}] * 100,
+                                        "pageInfo": {"hasNextPage": True, "endCursor": "x"}}
+            elif "open:issues" in query:
                 repo.update(open={"totalCount": 4}, resolved={"totalCount": 6}, merged={"totalCount": 3})
             elif "pullRequests(first" in query and endless:  # a long history: every page has another page
                 n = sum("pullRequests(first" in c[-1] for c in calls)
@@ -216,6 +230,44 @@ class CheapReadsFirstAndLastGoodTests(unittest.TestCase):
             self.assertIn("median_minutes", data[repo]["ci"], repo)
             self.assertTrue(any("pulls" in u and "request budget exhausted" in u for u in data[repo]["unavailable"]), repo)
             self.assertIn("resolved_per_day", data[repo]["issues"], repo)  # the other long read still ran in each repo
+
+    def test_every_tile_has_data_within_the_budget_even_with_endless_pull_history(self):
+        """Regression (roadmap, 2026-11-23): PR paging starved the merge tiles. Merge counts now come from search counts and a
+        light sample, so every tile has data in BOTH repos inside the 60-request budget however long the PR history is."""
+        run, calls = self.stub()
+        data = collect(run, NOW)
+        self.assertLessEqual(len(calls), 60)
+        for repo in ("danswett/agent-bridge", "danswett/slipgates-fleet"):
+            stats = data[repo]
+            self.assertEqual(len(stats["merges"]["per_hour"]), 48, repo)
+            self.assertEqual(stats["merges"]["per_hour"][-1]["count"], 2)
+            self.assertEqual([stats["merges"][k] for k in ("last_hour", "last_24_hours", "last_7_days")], [1, 5, 20], repo)
+            self.assertEqual(len(stats["pull_requests"]["merged_per_day"]), 30, repo)
+            self.assertEqual(len(stats["pull_requests"]["opened_per_day"]), 30, repo)
+            self.assertEqual(stats["pull_requests"]["merged_per_day"][-1]["count"], 3)
+            self.assertEqual(stats["pull_requests"]["median_hours_to_merge"], 24, repo)
+            self.assertEqual(stats["commits"]["total"], 1234, repo)
+            self.assertIn("median_minutes", stats["ci"], repo)
+            self.assertEqual(stats["issues"]["counts"]["total"], 10, repo)
+            text = " | ".join(stats["unavailable"])
+            self.assertIn("pulls: request budget exhausted", text)  # only the heavy extras are missing
+            self.assertNotIn("Data unavailable: pull requests", text)
+            self.assertNotIn("builders", stats)
+
+    def test_a_failed_search_read_keeps_the_last_good_merge_tiles_and_says_so(self):
+        run, _ = self.stub()
+        earlier = collect(run, NOW)
+
+        def broken(*args):
+            if "search(" in args[-1]:
+                raise CalledProcessError(1, "gh")
+            return run(*args)
+        data = collect(broken, NOW, previous=earlier, previous_at="2026-11-11T05:00:00+00:00")
+        repo = data["danswett/agent-bridge"]
+        self.assertEqual(len(repo["merges"]["per_hour"]), 48)
+        self.assertEqual(repo["merges"]["stale_since"], "2026-11-11T05:00:00+00:00")
+        self.assertEqual(repo["pull_requests"]["stale_since"], "2026-11-11T05:00:00+00:00")
+        self.assertIn("Stale: danswett/agent-bridge merge counts", " | ".join(repo["unavailable"]))
 
     def test_failed_commits_and_ci_reads_keep_the_last_good_value_and_say_so(self):
         run, _ = self.stub()

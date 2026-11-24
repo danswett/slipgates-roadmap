@@ -39,9 +39,22 @@ def summarize(source, now):
                 counts[key(at)] += 1
         return [{"at": at, "count": count} for at, count in counts.items()]
 
+    counted = "merge_counts" in source  # merge tiles from search counts: no PR paging needed
     for name in ("issue_counts", "closed_issues", "commits", "pulls", "runs", "prsMergedTotal"):
-        if name not in source:
+        if name not in source and not (name == "pulls" and counted):
             missing({"issue_counts": "issues", "pulls": "pull requests", "runs": "CI"}.get(name, name))
+    if counted:
+        counts = source["merge_counts"]
+        result["merges"] = dict(counts["rolling"], per_hour=counts["per_hour"])
+        result["pull_requests"] = {"opened_per_day": counts["opened_per_day"], "merged_per_day": counts["merged_per_day"]}
+        durations = [(timestamp(p["mergedAt"]) - timestamp(p["createdAt"])).total_seconds() / 3600
+                     for p in source.get("merged_sample", []) if p.get("mergedAt") and p.get("createdAt")]
+        if durations:
+            result["pull_requests"]["median_hours_to_merge"] = median(durations)
+        else:
+            missing("median time to merge")
+        if "pulls" not in source:
+            missing("builders, review receipts and ready latency (full 30-day PR history not read)")
     if "issue_counts" in source:
         result["issues"] = {"counts": source["issue_counts"]}
     if "prsMergedTotal" in source:
@@ -56,14 +69,15 @@ def summarize(source, now):
         pulls = source["pulls"]
         merged = [p for p in pulls if p.get("mergedAt") and start <= timestamp(p["mergedAt"]) <= now]
         opened = [p for p in pulls if start <= timestamp(p["createdAt"]) <= now]
-        result["merges"] = {key: sum(now - timedelta(hours=hours) <= timestamp(p["mergedAt"]) <= now for p in merged)
-                            for key, hours in (("last_hour", 1), ("last_24_hours", 24), ("last_7_days", 168))}
-        result["merges"]["per_hour"] = series((p["mergedAt"] for p in merged), 48, True)
-        result["pull_requests"] = {"opened_per_day": series((p["createdAt"] for p in pulls), 30),
-                                   "merged_per_day": series((p.get("mergedAt") for p in pulls), 30)}
-        durations = [(timestamp(p["mergedAt"]) - timestamp(p["createdAt"])).total_seconds() / 3600 for p in merged]
-        if durations:
-            result["pull_requests"]["median_hours_to_merge"] = median(durations)
+        if not counted:
+            result["merges"] = {key: sum(now - timedelta(hours=hours) <= timestamp(p["mergedAt"]) <= now for p in merged)
+                                for key, hours in (("last_hour", 1), ("last_24_hours", 24), ("last_7_days", 168))}
+            result["merges"]["per_hour"] = series((p["mergedAt"] for p in merged), 48, True)
+            result["pull_requests"] = {"opened_per_day": series((p["createdAt"] for p in pulls), 30),
+                                       "merged_per_day": series((p.get("mergedAt") for p in pulls), 30)}
+            durations = [(timestamp(p["mergedAt"]) - timestamp(p["createdAt"])).total_seconds() / 3600 for p in merged]
+            if durations:
+                result["pull_requests"]["median_hours_to_merge"] = median(durations)
         result["builders"] = dict(Counter(p["author"]["login"] for p in opened if p.get("author")))
         ready, families = [], Counter()
         ready_complete = True
@@ -111,16 +125,19 @@ def summarize(source, now):
 
 
 def keep_last_good(result, repo, source, previous, previous_at):
-    """A failed commits or CI read keeps the earlier good value, labelled stale and never shown as fresh."""
+    """A failed read keeps the earlier good value, labelled stale and never shown as fresh."""
     earlier = previous.get(repo) if isinstance(previous, dict) else None
     earlier = earlier if isinstance(earlier, dict) else {}
-    for key, field, label in (("commits", "commits", "commits"), ("ci", "runs", "CI")):
-        if field in source or key in result or not isinstance(earlier.get(key), dict):
+    for key, fields, label in (("commits", ("commits",), "commits"), ("ci", ("runs",), "CI"),
+                               ("merges", ("merge_counts", "pulls"), "merge counts"),
+                               ("pull_requests", ("merge_counts", "pulls"), "pull request counts")):
+        if any(f in source for f in fields) or key in result or not isinstance(earlier.get(key), dict):
             continue
-        reason = next((u.split(": ", 2)[-1] for u in source["unavailable"] if u.startswith(f"Data unavailable: {repo} {field}:")), "read failed")
+        reason = next((u.split(": ", 2)[-1] for u in source["unavailable"] if u.startswith(f"Data unavailable: {repo} {fields[0]}:")), "read failed")
         result[key] = dict(earlier[key], stale_since=earlier[key].get("stale_since") or previous_at or "an earlier run")
         result["unavailable"] = [u for u in result.get("unavailable", [])
-                                 if u not in (f"Data unavailable: {label}", f"Data unavailable: {repo} {field}: {reason}")]
+                                 if u not in (f"Data unavailable: {label}", "Data unavailable: pull requests",
+                                              f"Data unavailable: {repo} {fields[0]}: {reason}")]
         result["unavailable"].append(f"Stale: {repo} {label} shows the last good value from {result[key]['stale_since']}; this read failed: {reason}")
     if not result.get("unavailable"):
         result.pop("unavailable", None)
@@ -207,7 +224,46 @@ def collect(run, now=None, budget=60, previous=None, previous_at=None):
                           ("ref", "target", "history"))
             return {"total": total, "nodes": nodes}
 
+        def merge_counts():
+            """Merged and opened PR counts from search issueCount aliases: two requests however long the PR history is."""
+            span = f"repo:{repo} is:pr "
+            stamp = lambda when: when.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            end = now.replace(minute=0, second=0, microsecond=0)
+            alias = lambda name, query: f'{name}:search(query:"{span}{query}",type:ISSUE){{issueCount}}'
+            first, second, hour_keys = [], [], []
+            for i in range(48):
+                at = end - timedelta(hours=47 - i)
+                hour_keys.append(at.astimezone(PACIFIC).isoformat())
+                last = min(at + timedelta(hours=1) - timedelta(seconds=1), now)
+                first.append(alias(f"h{i:02}", f"is:merged merged:{stamp(at)}..{stamp(last)}"))
+            for name, hours in (("r1", 1), ("r24", 24), ("r168", 168)):
+                first.append(alias(name, f"is:merged merged:>={stamp(now - timedelta(hours=hours))}"))
+            today = now.astimezone(PACIFIC).date()
+            days = [today - timedelta(days=29 - i) for i in range(30)]
+            for i, day in enumerate(days):
+                lo = datetime(day.year, day.month, day.day, tzinfo=PACIFIC)
+                nxt = day + timedelta(days=1)  # the next Pacific midnight, so DST days are 23 or 25 hours long
+                hi = datetime(nxt.year, nxt.month, nxt.day, tzinfo=PACIFIC).astimezone(timezone.utc) - timedelta(seconds=1)
+                window = f"{stamp(lo)}..{stamp(min(hi, now))}"
+                second.append(alias(f"m{i:02}", f"is:merged merged:{window}"))
+                second.append(alias(f"o{i:02}", f"created:{window}"))
+
+            def read(aliases):
+                data = request("graphql", "query{" + " ".join(aliases) + "}")["data"]
+                return {name: data[name]["issueCount"] for name in (a.split(":", 1)[0] for a in aliases)}
+            one, two = read(first), read(second)
+            for value in (*one.values(), *two.values()):
+                if type(value) is not int or value < 0:
+                    raise ValueError("merge counts malformed")
+            return {"rolling": {"last_hour": one["r1"], "last_24_hours": one["r24"], "last_7_days": one["r168"]},
+                    "per_hour": [{"at": key, "count": one[f"h{i:02}"]} for i, key in enumerate(hour_keys)],
+                    "merged_per_day": [{"at": day.isoformat(), "count": two[f"m{i:02}"]} for i, day in enumerate(days)],
+                    "opened_per_day": [{"at": day.isoformat(), "count": two[f"o{i:02}"]} for i, day in enumerate(days)]}
+
         load("commits", commits)
+        load("merge_counts", merge_counts)
+        load("merged_sample", lambda: graphql("isPrivate pullRequests(first:100,states:MERGED,orderBy:{field:UPDATED_AT,direction:DESC})"
+                                              "{nodes{createdAt mergedAt}}")["pullRequests"]["nodes"])
         load("runs", lambda: request(f"repos/{repo}/actions/workflows/ci.yml/runs?branch=main&status=completed&per_page=100")["workflow_runs"])
 
         def long_reads():
