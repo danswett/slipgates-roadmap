@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { validatePeopleCounts } from './people-at-work.mjs';
 import { validateFleetCounts } from './fleet-counts.mjs';
+import { validateCost } from './cost.mjs';
 
 function readCounts(path, validate, now) {
   let value;
@@ -12,3 +13,4 @@ function readCounts(path, validate, now) {
 }
 export const readPeopleCounts = (path, now = Date.now()) => readCounts(path, validatePeopleCounts, now);
 export const readFleetCounts = (path) => readCounts(path, validateFleetCounts, Date.now());
+export const readCostFile = (path) => readCounts(path, validateCost, Date.now());
