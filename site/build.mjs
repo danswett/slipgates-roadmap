@@ -54,13 +54,13 @@ const done = epics.reduce((n, e) => n + e.closed, 0), total = epics.reduce((n, e
 // A value carried over from an earlier run (stale_since, set by tools/epic-dashboard/stats.py) is labelled, never shown as fresh.
 // Only a timestamp is formatted; anything else prints as a fixed phrase, and what is printed is escaped.
 const when = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value) && Number.isFinite(Date.parse(value))
-  ? new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(value)) + ' PT'
+  ? new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(value)) + ' PT'
   : 'an earlier run';
 const staleBadge = (...parts) => {
   const part = parts.find((p) => p && typeof p === 'object' && p.stale_since !== undefined);
   if (!part) return '';
   const text = `Last good value from ${escape(when(part.stale_since))}`;
-  return `<span class="stale-badge" title="${text}">Stale</span><div class="sub">${text}</div>`;
+  return `<span class="stale-badge">Stale</span><div class="sub">${text}</div>`;
 };
 const tile = (title, body) => `<div class="card"><h2>${title}</h2>${body}</div>`;
 const number = (n) => { const result = count(n); return `<div class="${typeof result === 'number' ? 'stat num' : 'none'}">${result}</div>`; };

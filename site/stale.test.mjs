@@ -33,7 +33,8 @@ test('fresh values carry no Stale badge', () => {
 test('a carried commits value shows a Stale badge with the time it is from', () => {
   const html = build({ commits: { total: 456, stale_since: '2026-11-11T05:00:00+00:00' }, merges: { last_24_hours: 17 } });
   assert.equal(badges(html), 1);
-  assert.match(html, /Commits<[^]*?class="stale-badge"[^]*?Last good value from Nov 10, 9:00[\s\u202f]PM PT/);
+  assert.match(html, /Commits<[^]*?class="stale-badge"[^]*?Last good value from Nov 10, 2026, 9:00[\s\u202f]PM PT/);
+  assert.equal(html.split('Last good value').length - 1, 1, 'the text is printed once, not also in a title');
 });
 
 test('a carried merge count shows a Stale badge on the merged tile', () => {
