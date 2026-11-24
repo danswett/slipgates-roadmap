@@ -252,6 +252,7 @@ def collect(run, now=None, budget=60, previous=None, previous_at=None):
                 window = f"{stamp(lo)}..{stamp(min(hi, now))}"
                 second.append(alias(f"m{i:02}", f"is:merged merged:{window}"))
                 second.append(alias(f"o{i:02}", f"created:{window}"))
+            second.append(alias("u", f"updated:>={stamp(start - timedelta(days=29))}"))  # what the heavy PR read would page through
 
             def read(aliases):
                 data = request("graphql", "query{" + " ".join(aliases) + "}")["data"]
@@ -263,10 +264,11 @@ def collect(run, now=None, budget=60, previous=None, previous_at=None):
             return {"rolling": {"last_hour": one["r1"], "last_24_hours": one["r24"], "last_7_days": one["r168"]},
                     "per_hour": [{"at": key, "count": one[f"h{i:02}"]} for i, key in enumerate(hour_keys)],
                     "merged_per_day": [{"at": day.isoformat(), "count": two[f"m{i:02}"]} for i, day in enumerate(days)],
-                    "opened_per_day": [{"at": day.isoformat(), "count": two[f"o{i:02}"]} for i, day in enumerate(days)]}
+                    "opened_per_day": [{"at": day.isoformat(), "count": two[f"o{i:02}"]} for i, day in enumerate(days)],
+                    "pulls_updated": two["u"]}
 
+        load("merge_counts", merge_counts)  # before the commit paging: two requests, whatever the commit volume
         load("commits", commits)
-        load("merge_counts", merge_counts)
         load("merged_sample", lambda: graphql("isPrivate pullRequests(first:100,states:MERGED,orderBy:{field:UPDATED_AT,direction:DESC})"
                                               "{nodes{createdAt mergedAt}}")["pullRequests"]["nodes"])
         load("runs", lambda: request(f"repos/{repo}/actions/workflows/ci.yml/runs?branch=main&status=completed&per_page=100")["workflow_runs"])
@@ -274,6 +276,12 @@ def collect(run, now=None, budget=60, previous=None, previous_at=None):
         def long_reads():
             load("closed_issues", lambda: pages("issues(first:100,after:CURSOR,states:CLOSED,orderBy:{field:UPDATED_AT,direction:DESC})"
                                               "{nodes{closedAt updatedAt}" + page_info + "}", ("issues",), start - timedelta(days=13)))
+            updated = (source.get("merge_counts") or {}).get("pulls_updated")
+            needed = -(-updated // 50) if type(updated) is int else 0  # pages of 50; unknown (0) means try it
+            if needed > remaining - floor:  # it cannot finish: do not spend what it would burn on a read the page cannot show
+                source["unavailable"].append(f"Data unavailable: {repo} pulls: {updated} pull requests updated in 30 days need {needed} requests, "
+                                             f"more than the {remaining - floor} left")
+                return
             load("pulls", lambda: pages("pullRequests(first:50,after:CURSOR,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{"
                                       "createdAt updatedAt mergedAt headRefOid author{login} comments(first:100){nodes{body authorAssociation}pageInfo{hasNextPage}}"
                                       "timelineItems(first:100,itemTypes:[LABELED_EVENT]){nodes{... on LabeledEvent{createdAt label{name}}}"

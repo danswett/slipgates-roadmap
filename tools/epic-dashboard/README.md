@@ -9,5 +9,7 @@ Ready latency uses the earliest `ready` label, median and nearest-rank p90, with
 CI latency is run-start to update for the latest 100 completed main `ci.yml` runs named `CI`.
 Merge tiles (per hour, per day, rolling 1 h/24 h/7 d, opened per day) come from GraphQL search `issueCount` aliases, two requests per repo however
 long the PR history is; median time to merge is from one light page of the latest 100 merged PRs (a sample, not all 30 days). Builders, review
-receipts and ready latency still need the full 30-day PR history, read last with what budget is left; if it is cut short only those are
-`Data unavailable`, never the merge tiles. A failed merge-count read keeps the last good value (`--previous`), labelled stale.
+receipts and ready latency still need the full 30-day PR history, read last with what budget is left. The day request also counts the PRs
+updated in 30 days (one alias, no extra request); when that needs more pages of 50 than the budget has left, the read is not started and the
+reason says so (`Data unavailable: <repo> pulls: N pull requests updated in 30 days need M requests`). If it is cut short only those are
+`Data unavailable`, never the merge tiles. The merge counts run before the commit paging, so commit volume cannot starve them. A failed merge-count read keeps the last good value (`--previous`), labelled stale.
