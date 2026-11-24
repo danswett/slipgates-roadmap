@@ -1,5 +1,6 @@
+import { staleBadge } from './stale.mjs';
 // Cost per merge tile: the public aggregate cost.json (units per merge, units by role, coordination share, 7 days).
-// Aggregates only. Validated field by field; a bad or missing file is Data unavailable, an old one shows "Stale since".
+// Aggregates only. Validated field by field; a bad or missing file is Data unavailable, an old one shows the shared Stale badge.
 export const COST_TARGET = 300;
 const STALE_AFTER = 3 * 3600000;
 const ROLES = ['Lead', 'Chief', 'Builder', 'Reviewer', 'Other'];
@@ -59,9 +60,9 @@ export function renderCostTile(cost, now = Date.now()) {
 <line class="axis" x1="0" x2="560" y1="112" y2="112"/>${bars}<line class="cost-target" x1="0" x2="560" y1="${y(COST_TARGET)}" y2="${y(COST_TARGET)}"/></svg>
 <div class="axis-l" aria-hidden="true"><span>6 days ago</span><span>Today (dashed line: target ${COST_TARGET})</span></div>`;
   const rows = cost.series.map((d) => `<tr><td>${d.day}</td><td>${d.unitsPerMerge === null ? 'Data unavailable' : fmt(d.unitsPerMerge)}</td></tr>`).join('');
-  return card(`${head}<p class="sub">Of all units, the coordination (Lead and Chief) share is ${share}.</p>
+  return card(`${head}${old ? staleBadge({ stale_since: cost.generatedAt }) : ''}<p class="sub">Of all units, the coordination (Lead and Chief) share is ${share}.</p>
 <table aria-label="Units per merge by role"><thead><tr><th scope="col">Role</th><th scope="col">Units per merge</th><th scope="col">Units today</th></tr></thead><tbody>${roles}</tbody></table>
 ${chart}<details><summary>View as a table</summary><table><caption>Units per merge, last 7 days (Pacific days)</caption>
 <thead><tr><th scope="col">Date</th><th scope="col">Units per merge</th></tr></thead><tbody>${rows}</tbody></table></details>
-<p class="sub">Claude Code and Codex units (Opus 15, others 1) over all merges of both repos.${old ? ` <span class="cost-stale" role="status">Stale since ${cost.generatedAt}</span>` : ` Updated ${cost.generatedAt}.`}</p>`);
+<p class="sub">Claude Code and Codex units (Opus 15, others 1) over all merges of both repos.${old ? '' : ` Updated ${cost.generatedAt}.`}</p>`);
 }

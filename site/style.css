@@ -67,5 +67,5 @@ footer{margin-top:40px;color:var(--ab-text3);font-size:.8125rem;display:flex;fle
 }
 .cost table{width:100%;border-collapse:collapse;margin-top:8px}.cost th,.cost td{text-align:left;padding:2px 8px 2px 0;font-size:.875rem}
 .cost-bar{fill:color-mix(in srgb,var(--ab-bridge) 75%,transparent)}.cost-bar.today{fill:var(--ab-bridge)}
-.cost-target{stroke:var(--ab-text2);stroke-width:1.5;stroke-dasharray:6 4}.cost-stale{color:var(--ab-text);font-weight:600}
+.cost-target{stroke:var(--ab-text2);stroke-width:1.5;stroke-dasharray:6 4}
 @media(forced-colors:active){.cost-bar{fill:GrayText;forced-color-adjust:none}.cost-bar.today{fill:Highlight}.cost-target{stroke:CanvasText}}

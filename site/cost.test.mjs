@@ -70,14 +70,17 @@ test('null ratios and null days are Data unavailable, never zero', () => {
   assert.match(html, /<td>2026-11-18<\/td><td>Data unavailable<\/td>/);
 });
 
-test('an old file shows stale since its own time; no file shows Data unavailable', () => {
+test('an old file shows the shared Stale badge with its own time and year; no file shows Data unavailable', () => {
   const html = renderCostTile(validateCost(sample(), NOW), NOW + 4 * 3600000);
-  assert.match(html, /Stale since 2026-11-23T20:05:11Z/);
+  assert.equal(html.match(/class="stale-badge">Stale<\/span>/g)?.length, 1);
+  assert.match(html, /Last good value from Nov 23, 2026, 12:05[\s ]PM PT/);
+  assert.doesNotMatch(html, /Stale since|cost-stale/);
+  assert.doesNotMatch(html, /<p class="sub">[^<]*<div/);  // a block inside a paragraph is invalid markup
   assert.match(html, /units per merge on 2026-11-23, target/);
-  assert.doesNotMatch(renderCostTile(validateCost(sample(), NOW), Date.parse('2026-11-23T20:05:11Z') + 3 * 3600000), /Stale since/);  // exactly 3 h is still fresh
-  assert.match(renderCostTile(validateCost(sample(), NOW), Date.parse('2026-11-23T20:05:11Z') + 3 * 3600000 + 1000), /Stale since/);
+  assert.doesNotMatch(renderCostTile(validateCost(sample(), NOW), Date.parse('2026-11-23T20:05:11Z') + 3 * 3600000), /stale-badge/);  // exactly 3 h is still fresh
+  assert.match(renderCostTile(validateCost(sample(), NOW), Date.parse('2026-11-23T20:05:11Z') + 3 * 3600000 + 1000), /stale-badge/);
   assert.match(renderCostTile(undefined, NOW), /Data unavailable/);
-  assert.doesNotMatch(renderCostTile(undefined, NOW), /Stale since/);
+  assert.doesNotMatch(renderCostTile(undefined, NOW), /stale-badge/);
 });
 
 function build(cost, roadmap = true) {
