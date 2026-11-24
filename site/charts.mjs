@@ -1,3 +1,4 @@
+import { staleBadge } from './stale.mjs';
 const unavailable = (field) => {
   console.error(`Data unavailable: ${field}.`);
   return '<p class="none">Data unavailable</p>';
@@ -41,8 +42,8 @@ export function renderCharts(stats) {
 <div class="bars" role="img" aria-label="Pull requests merged per day over 14 days, today ${days.at(-1).count}">${days.map(b => `<i style="--h:${Math.round(b.count / max * 100)}%"></i>`).join('')}</div>
 <div class="axis-l" aria-hidden="true"><span>13 days ago</span><span>Today</span></div>${table(days, false)}`;
   }
-  return `<div class="grid charts"><section class="card" aria-labelledby="h-mph"><h2 id="h-mph">Merges per hour, last 24 h</h2>${hours ? hourly : unavailable('hourly merges')}</section>
-<section class="card" aria-labelledby="h-throughput"><h2 id="h-throughput">Throughput</h2>${days ? daily : unavailable('daily merged PRs')}
+  return `<div class="grid charts"><section class="card" aria-labelledby="h-mph"><h2 id="h-mph">Merges per hour, last 24 h</h2>${staleBadge(stats?.merges)}${hours ? hourly : unavailable('hourly merges')}</section>
+<section class="card" aria-labelledby="h-throughput"><h2 id="h-throughput">Throughput</h2>${staleBadge(stats?.pull_requests)}${days ? daily : unavailable('daily merged PRs')}
 <div class="grid metrics"><div><h3>Median time to merge</h3>${metric(stats?.pull_requests?.median_hours_to_merge, true)}</div>
-<div><h3>Main CI time</h3>${metric(stats?.ci?.median_minutes, false)}</div></div></section></div>`;
+<div><h3>Main CI time</h3>${metric(stats?.ci?.median_minutes, false)}${staleBadge(stats?.ci)}</div></div></section></div>`;
 }
