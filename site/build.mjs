@@ -51,6 +51,17 @@ const percent = (done, total) => total ? Math.round(done / total * 100) : 0;
 const bar = (done, total, label, small = false) => `<div class="bar${small ? ' sm' : ''}" role="progressbar" aria-label="${escape(label)}" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${done}" aria-valuetext="${done} of ${total} ${label === 'Issues resolved' ? 'resolved' : 'slices done'}"><i style="--p:${percent(done, total)}%"></i></div>`;
 const epics = reason ? [] : value.epics.filter((e) => !e.repository || e.repository === 'danswett/agent-bridge');
 const done = epics.reduce((n, e) => n + e.closed, 0), total = epics.reduce((n, e) => n + e.closed + e.open, 0);
+// A value carried over from an earlier run (stale_since, set by tools/epic-dashboard/stats.py) is labelled, never shown as fresh.
+// Only a timestamp is formatted; anything else prints as a fixed phrase, and what is printed is escaped.
+const when = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value) && Number.isFinite(Date.parse(value))
+  ? new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(value)) + ' PT'
+  : 'an earlier run';
+const staleBadge = (...parts) => {
+  const part = parts.find((p) => p && typeof p === 'object' && p.stale_since !== undefined);
+  if (!part) return '';
+  const text = `Last good value from ${escape(when(part.stale_since))}`;
+  return `<span class="stale-badge">Stale</span><div class="sub">${text}</div>`;
+};
 const tile = (title, body) => `<div class="card"><h2>${title}</h2>${body}</div>`;
 const number = (n) => { const result = count(n); return `<div class="${typeof result === 'number' ? 'stat num' : 'none'}">${result}</div>`; };
 const mergedTile = () => `<div data-live-merged data-total="${count(stats?.prsMergedTotal)}" data-recent="${count(stats?.merges?.last_24_hours)}" data-generated-at="${escape(timestamp)}">${renderMergedCounts(stats?.prsMergedTotal, stats?.merges?.last_24_hours, fleetCounts, timestamp)}</div>`;
@@ -61,8 +72,8 @@ const content = reason
   ? `<section class="hero"><h1>Data unavailable</h1><p class="lede">The roadmap could not read its data at ${time}. It tries again every few minutes. Nothing is lost.</p>${stale ? `<p class="lede">The last good update was at ${time}.</p>` : ''}</section>`
   : `<section class="hero"><h1>Where Slipgates stands</h1><p class="lede">Progress on each epic, and how fast the work is landing. Public repository data only.</p>
 <div class="hero-bar"><div class="row"><span class="big num">${percent(done, total)}%</span><span class="lbl">${done} of ${total} planned slices done across ${epics.length} epics</span></div>${bar(done, total, 'All epics')}</div></section>
-<div class="grid tiles" aria-label="Totals">${tile('Commits', number(stats?.commits?.total) + '<div class="sub">on main, all time</div>')}
-${tile('Pull requests merged', mergedTile())}
+<div class="grid tiles" aria-label="Totals">${tile('Commits', number(stats?.commits?.total) + staleBadge(stats?.commits) + '<div class="sub">on main, all time</div>')}
+${tile('Pull requests merged', mergedTile() + staleBadge(stats?.merges, stats?.pull_requests))}
 ${tile('Issues resolved', `<div class="stat num">${count(issues?.resolved)}<small>of ${count(issues?.total)}</small></div>` + ([issues?.resolved, issues?.total].every(Number.isSafeInteger) && issues.resolved >= 0 && issues.total >= issues.resolved ? bar(issues.resolved, issues.total, 'Issues resolved', true) : ''))}
 ${tile('People at work', peopleTile())}</div>${renderCharts(stats)}
 <section class="grid" aria-labelledby="h-ep"><h2 id="h-ep">Epics</h2><ul class="epics">${renderEpics(epics, escape)}</ul></section>${renderBlockers(epics, escape)}${renderNeedsBlocker(epics, escape)}`;

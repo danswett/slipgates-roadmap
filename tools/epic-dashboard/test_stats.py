@@ -421,3 +421,59 @@ class SearchWindowAndBudgetTests(unittest.TestCase):
         run, calls, _ = self.search_run(counts={"u": 100})
         collect(run, NOW)
         self.assertTrue(any("timelineItems" in c[-1] for c in calls))
+
+
+class CommitCapAndPreviousChecksTests(unittest.TestCase):
+    """Roadmap #37 (review notes on #36): cap the commit paging per repo, and type-check what --previous supplies."""
+
+    def test_commit_paging_is_capped_per_repo_and_keeps_the_total_and_the_other_tiles(self):
+        from stats import COMMIT_PAGES
+        run, calls, _ = SearchWindowAndBudgetTests.search_run(None, endless_commits=True)
+        data = collect(run, NOW)
+        pages = [c for c in calls if "history(first:100" in c[-1]]
+        self.assertEqual(len(pages), 2 * COMMIT_PAGES)  # one repo cannot take the other's requests
+        self.assertLessEqual(len(calls), 60)
+        for repo in ("danswett/agent-bridge", "danswett/slipgates-fleet"):
+            self.assertEqual(data[repo]["commits"]["total"], 1234, repo)
+            self.assertNotIn("per_day", data[repo]["commits"], repo)  # an incomplete series is never shown as complete
+            self.assertIn(f"commit history is longer than {COMMIT_PAGES} pages", " | ".join(data[repo]["unavailable"]), repo)
+            self.assertEqual(len(data[repo]["merges"]["per_hour"]), 48, repo)
+            self.assertIn("median_minutes", data[repo]["ci"], repo)
+
+    def previous_with(self, **commits):
+        run, _ = CheapReadsFirstAndLastGoodTests.stub(None)
+        earlier = collect(run, NOW)
+        earlier["danswett/agent-bridge"]["commits"].update(commits)
+        return earlier
+
+    def failing_commits(self, previous, previous_at="2026-11-11T05:00:00+00:00"):
+        run, _ = CheapReadsFirstAndLastGoodTests.stub(None, fail=("commits",))
+        return collect(run, NOW, previous=previous, previous_at=previous_at)["danswett/agent-bridge"]
+
+    def test_a_previous_value_that_is_not_plain_finite_json_is_ignored_not_carried(self):
+        for bad in (float("nan"), float("inf"), {"x": [float("-inf")]}):
+            with self.subTest(bad=bad):
+                repo = self.failing_commits(self.previous_with(total=bad))
+                self.assertNotIn("commits", repo)
+                self.assertIn("Data unavailable: commits", repo["unavailable"])
+
+    def test_a_previous_value_nested_too_deep_to_check_is_ignored_not_fatal(self):
+        # roadmap #37 review: plain() recursed, so a value that loads fine but is deeply nested raised out of collect()
+        for depth in (600, 5000):
+            deep = []
+            for _ in range(depth):
+                deep = [deep]
+            with self.subTest(depth=depth):
+                repo = self.failing_commits(self.previous_with(per_day=deep))
+                self.assertNotIn("commits", repo)
+                self.assertIn("Data unavailable: commits", repo["unavailable"])
+
+    def test_stale_since_is_a_timestamp_or_a_fixed_phrase_never_other_text(self):
+        for bad in ("<img src=x onerror=alert(1)>", "2026-11-11T05:00:00Z\n# injected", 123, "", "a" * 500):
+            with self.subTest(bad=bad):
+                repo = self.failing_commits(self.previous_with(stale_since=bad))
+                self.assertEqual(repo["commits"]["stale_since"], "2026-11-11T05:00:00+00:00")
+                self.assertNotIn("injected", " | ".join(repo["unavailable"]))
+        repo = self.failing_commits(self.previous_with(), previous_at="<b>bad</b>")
+        self.assertEqual(repo["commits"]["stale_since"], "an earlier run")
+        self.assertNotIn("<b>", " | ".join(repo["unavailable"]))

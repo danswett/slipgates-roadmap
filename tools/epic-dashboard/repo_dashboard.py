@@ -194,7 +194,7 @@ def main():
             previous, previous_at = earlier["stats"], earlier.get("updatedAt")
             if not isinstance(previous, dict):
                 previous = previous_at = None
-        except (OSError, ValueError, KeyError, TypeError):
+        except (OSError, ValueError, KeyError, TypeError, RecursionError):  # RecursionError: a file nested too deep for json.loads
             pass  # no usable earlier file: failed reads stay Data unavailable
     try:
         data, body = generate(read(previous, previous_at))
