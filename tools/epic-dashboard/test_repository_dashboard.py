@@ -47,6 +47,15 @@ class RepositoryDashboardTests(unittest.TestCase):
                 repo.main()  # a missing or unreadable previous file is just no earlier value
             read.assert_called_once_with(None, None)
 
+    def test_a_previous_file_nested_too_deep_for_json_is_ignored_not_fatal(self):
+        # roadmap #37 review: json.loads raises RecursionError on a deeply nested file, which main() did not catch
+        with tempfile.TemporaryDirectory() as directory:
+            output, body, prev = Path(directory) / "data.json", Path(directory) / "body.md", Path(directory) / "prev.json"
+            prev.write_text("[" * 100000 + "]" * 100000)
+            with patch.object(repo, "read", return_value={"epics": [], "priority_body": ""}) as read,                     patch("sys.argv", ["repo_dashboard", "--json-output", str(output), "--body-output", str(body), "--previous", str(prev)]):
+                repo.main()
+            read.assert_called_once_with(None, None)
+
     def test_a_failed_gh_call_says_why_in_the_unavailable_reason_without_secrets(self):
         error = subprocess.CalledProcessError(1, ["gh", "api", "graphql"], output="",
                                               stderr="gh: API rate limit exceeded for installation (HTTP 403)\nsecond line")

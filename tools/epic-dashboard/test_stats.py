@@ -457,6 +457,17 @@ class CommitCapAndPreviousChecksTests(unittest.TestCase):
                 self.assertNotIn("commits", repo)
                 self.assertIn("Data unavailable: commits", repo["unavailable"])
 
+    def test_a_previous_value_nested_too_deep_to_check_is_ignored_not_fatal(self):
+        # roadmap #37 review: plain() recursed, so a value that loads fine but is deeply nested raised out of collect()
+        for depth in (600, 5000):
+            deep = []
+            for _ in range(depth):
+                deep = [deep]
+            with self.subTest(depth=depth):
+                repo = self.failing_commits(self.previous_with(per_day=deep))
+                self.assertNotIn("commits", repo)
+                self.assertIn("Data unavailable: commits", repo["unavailable"])
+
     def test_stale_since_is_a_timestamp_or_a_fixed_phrase_never_other_text(self):
         for bad in ("<img src=x onerror=alert(1)>", "2026-11-11T05:00:00Z\n# injected", 123, "", "a" * 500):
             with self.subTest(bad=bad):

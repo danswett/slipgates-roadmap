@@ -143,13 +143,25 @@ def clean_stamp(value):
     return value if isinstance(value, str) and len(value) <= 40 and STAMP.fullmatch(value) else None
 
 
-def plain(value):
-    """True for plain JSON of finite numbers: what an earlier roadmap.json can carry without breaking JSON.parse on the page."""
-    if isinstance(value, dict):
-        return all(isinstance(k, str) and plain(v) for k, v in value.items())
-    if isinstance(value, list):
-        return all(plain(v) for v in value)
-    return value is None or isinstance(value, (str, bool, int)) or (isinstance(value, float) and math.isfinite(value))
+def plain(value, max_depth=12):
+    """True for plain JSON of finite numbers: what an earlier roadmap.json can carry without breaking JSON.parse on the page.
+    Checked with a stack, not recursion, and nesting past max_depth (real stats nest 5 deep) is not plain: a deeply nested value
+    must neither raise RecursionError here nor later in json.dumps."""
+    stack = [(value, 0)]
+    while stack:
+        item, depth = stack.pop()
+        if isinstance(item, (dict, list)):
+            if depth >= max_depth:
+                return False
+            if isinstance(item, dict):
+                if not all(isinstance(k, str) for k in item):
+                    return False
+                stack.extend((v, depth + 1) for v in item.values())
+            else:
+                stack.extend((v, depth + 1) for v in item)
+        elif not (item is None or isinstance(item, (str, bool, int)) or (isinstance(item, float) and math.isfinite(item))):
+            return False
+    return True
 
 
 def keep_last_good(result, repo, source, previous, previous_at):
