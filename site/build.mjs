@@ -9,8 +9,9 @@ import { renderPeopleCounts } from './people-at-work.mjs';
 import { readPeopleCounts, readFleetCounts, readCostFile } from './counts-files.mjs';
 import { renderCostTile } from './cost.mjs';
 
-// --require-data (the Pages build): refuse to publish the unavailable page, so the last good page stays live.
-const args = process.argv.slice(2), requireData = args.includes('--require-data');
+// Refuse to publish the unavailable page, so the last good page stays live. On with --require-data, and always inside the Pages
+// workflow (GITHUB_WORKFLOW is "Pages"), so a build step that forgets the flag cannot ship "Data unavailable" silently.
+const args = process.argv.slice(2), requireData = args.includes('--require-data') || process.env.GITHUB_WORKFLOW === 'Pages';
 const [data = 'data/roadmap.json', out = '_site', fleet = 'data/fleet-counts.json', people = 'data/people-at-work.json', cost = 'data/cost.json'] = args.filter((arg) => arg !== '--require-data');
 let value, reason = '';
 try {
@@ -30,7 +31,7 @@ try {
 }
 if (reason) console.error(`Data unavailable: ${reason}`);
 if (reason && requireData) {
-  console.error('Refusing to publish the unavailable page (--require-data): the last good page stays.');
+  console.error('Refusing to publish the unavailable page (--require-data or the Pages workflow): the last good page stays.');
   process.exit(1);
 }
 const escape = (text) => text.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);

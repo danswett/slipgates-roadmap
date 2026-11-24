@@ -208,3 +208,25 @@ class BlockerTests(unittest.TestCase):
         self.assertEqual(["repos/danswett/agent-bridge/issues/696", "repos/danswett/agent-bridge/issues/55"],
                          [call.args[2] for call in run.call_args_list])
         self.assertEqual("Roster", data["blocker_titles"]["55"])
+
+
+class TransientRetryTests(unittest.TestCase):
+    def failure(self, text):
+        return subprocess.CalledProcessError(1, ["gh"], stderr=text)
+
+    def test_a_transient_503_is_retried_then_succeeds(self):
+        ok = subprocess.CompletedProcess(["gh"], 0, stdout="{}")
+        with patch("repo_dashboard.subprocess.run", side_effect=[self.failure("gh: HTTP 503"), ok]) as call,                 patch("repo_dashboard.time.sleep") as sleep:
+            self.assertEqual("{}", repo.run("gh", "api", "x"))
+        self.assertEqual(2, call.call_count)
+        sleep.assert_called_once()
+
+    def test_a_persistent_503_still_raises_and_other_errors_are_not_retried(self):
+        with patch("repo_dashboard.subprocess.run", side_effect=self.failure("gh: HTTP 503")) as call,                 patch("repo_dashboard.time.sleep"):
+            with self.assertRaises(subprocess.CalledProcessError):
+                repo.run("gh", "api", "x")
+        self.assertEqual(3, call.call_count)
+        with patch("repo_dashboard.subprocess.run", side_effect=self.failure("gh: HTTP 404")) as call:
+            with self.assertRaises(subprocess.CalledProcessError):
+                repo.run("gh", "api", "x")
+        self.assertEqual(1, call.call_count)

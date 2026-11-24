@@ -164,3 +164,17 @@ test('--require-data fails the build instead of publishing the unavailable page,
     assert.match(readFileSync(join(dir, 'out-plain', 'index.html'), 'utf8'), /Data unavailable/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('inside the Pages workflow the build refuses to publish the unavailable page even without --require-data', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'roadmap-pages-env-'));
+  try {
+    const data = join(dir, 'data.json');
+    const build = (workflow, out) => spawnSync(process.execPath, ['site/build.mjs', data, out], { encoding: 'utf8', env: { ...process.env, GITHUB_WORKFLOW: workflow } });
+    writeFileSync(data, JSON.stringify({ updatedAt: new Date().toISOString(), epics: [], stats: {}, error: 'Repository read failed (CalledProcessError): gh: HTTP 503' }));
+    const pages = build('Pages', join(dir, 'out-pages'));
+    assert.equal(pages.status, 1, pages.stderr);
+    assert.match(pages.stderr, /Refusing to publish the unavailable page/);
+    assert.equal(existsSync(join(dir, 'out-pages', 'index.html')), false);
+    assert.equal(build('CI', join(dir, 'out-ci')).status, 0);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
