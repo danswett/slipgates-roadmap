@@ -5,11 +5,12 @@ import { renderFleetCounts, renderMergedCounts } from './fleet-counts.mjs';
 import { renderEpics, renderNeedsBlocker, renderBlockers, validEpicDetails } from './epics.mjs';
 import { renderCharts } from './charts.mjs';
 import { renderPeopleCounts } from './people-at-work.mjs';
-import { readPeopleCounts, readFleetCounts } from './counts-files.mjs';
+import { readPeopleCounts, readFleetCounts, readCostFile } from './counts-files.mjs';
+import { renderCostTile } from './cost.mjs';
 
 // --require-data (the Pages build): refuse to publish the unavailable page, so the last good page stays live.
 const args = process.argv.slice(2), requireData = args.includes('--require-data');
-const [data = 'data/roadmap.json', out = '_site', fleet = 'data/fleet-counts.json', people = 'data/people-at-work.json'] = args.filter((arg) => arg !== '--require-data');
+const [data = 'data/roadmap.json', out = '_site', fleet = 'data/fleet-counts.json', people = 'data/people-at-work.json', cost = 'data/cost.json'] = args.filter((arg) => arg !== '--require-data');
 let value, reason = '';
 try {
   value = JSON.parse(readFileSync(data, 'utf8'));
@@ -75,7 +76,7 @@ const content = reason
 <div class="grid tiles" aria-label="Totals">${tile('Commits', number(stats?.commits?.total) + staleBadge(stats?.commits) + '<div class="sub">on main, all time</div>')}
 ${tile('Pull requests merged', mergedTile() + staleBadge(stats?.merges, stats?.pull_requests))}
 ${tile('Issues resolved', `<div class="stat num">${count(issues?.resolved)}<small>of ${count(issues?.total)}</small></div>` + ([issues?.resolved, issues?.total].every(Number.isSafeInteger) && issues.resolved >= 0 && issues.total >= issues.resolved ? bar(issues.resolved, issues.total, 'Issues resolved', true) : ''))}
-${tile('People at work', peopleTile())}</div>${renderCharts(stats)}
+${tile('People at work', peopleTile())}</div><div class="grid">${renderCostTile(readCostFile(cost))}</div>${renderCharts(stats)}
 <section class="grid" aria-labelledby="h-ep"><h2 id="h-ep">Epics</h2><ul class="epics">${renderEpics(epics, escape)}</ul></section>${renderBlockers(epics, escape)}${renderNeedsBlocker(epics, escape)}`;
 mkdirSync(out, { recursive: true });
 for (const asset of ['tokens.css', 'style.css', 'blockers.css', 'fonts', 'people-freshness.mjs', 'live-counts.mjs', 'people-at-work.mjs', 'fleet-counts.mjs']) cpSync(fileURLToPath(new URL(asset, import.meta.url)), join(out, asset), { recursive: true });
