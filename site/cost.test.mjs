@@ -107,3 +107,68 @@ test('the page builds with the tile from data/cost.json and without it', () => {
   }
   assert.doesNotMatch(build({ ...fresh, host: 'SECRET-HOST' }), /SECRET-HOST/);
 });
+
+// Stacked bars: each day's bar is split by role (Lead, Chief, Builder, Reviewer, Other), one fixed colour per role.
+const withRoles = (d, split = { Lead: 0.5, Chief: 0.2, Builder: 0.2, Reviewer: 0.1, Other: 0 }) => ({ ...d,
+  roles: Object.fromEntries(Object.entries(split).map(([name, share]) => [name, { units: Math.round(d.units * share),
+    unitsPerMerge: Math.round(Math.round(d.units * share) / d.merges * 10) / 10 }])) });
+const stacked = (over = {}) => sample({ series: Array.from({ length: 7 }, (_, n) => withRoles(day(n))), ...over });
+const ROLE_CLASS = { Lead: 'role-lead', Chief: 'role-chief', Builder: 'role-builder', Reviewer: 'role-reviewer', Other: 'role-other' };
+
+test('a series day may carry per-role numbers; bad ones are rejected', () => {
+  assert.ok(validateCost(stacked(), NOW));
+  const one = (roles) => stacked({ series: [...stacked().series.slice(0, 6), { ...stacked().series[6], roles }] });
+  const good = stacked().series[6].roles;
+  for (const roles of [null, [], { 'alice@host': good.Lead }, { Lead: { units: -1, unitsPerMerge: 1 } }, { Lead: { units: 1 } },
+    { Lead: { units: 1, unitsPerMerge: 1, host: 'x' } }, { Lead: { units: 400, unitsPerMerge: 999 } }, JSON.parse('{"__proto__":{"units":1,"unitsPerMerge":1}}')])
+    assert.equal(validateCost(one(roles), NOW), undefined, JSON.stringify(roles));
+  assert.ok(validateCost(one({}), NOW), 'an empty roles object is an honest day without a split');
+});
+
+test('each day is a stack of role segments in a fixed order with one colour class per role', () => {
+  const html = renderCostTile(validateCost(stacked(), NOW), NOW);
+  const bars = html.match(/<g class="cost-day[^"]*"[\s\S]*?<\/g>/g);
+  assert.equal(bars.length, 7);
+  const order = [...bars[6].matchAll(/class="cost-seg (role-\w+)"/g)].map((m) => m[1]);
+  assert.deepEqual(order, ['role-builder', 'role-reviewer', 'role-chief', 'role-lead']);  // bottom to top; Other is 0 so it draws nothing
+  for (const cls of Object.values(ROLE_CLASS)) assert.match(html, new RegExp(`<span class="swatch ${cls}"`));
+  assert.match(html, /cost-target/);  // the dashed target line stays
+});
+
+test('the legend names every role and the table fallback has per-role numbers for every day', () => {
+  const html = renderCostTile(validateCost(stacked(), NOW), NOW);
+  const legend = html.match(/<ul class="cost-legend"[\s\S]*?<\/ul>/)[0];
+  for (const role of Object.keys(ROLE_CLASS)) assert.match(legend, new RegExp(`>${role}<`));
+  const table = html.match(/<caption>Units per merge, last 7 days[\s\S]*?<\/table>/)[0];
+  for (const role of Object.keys(ROLE_CLASS)) assert.match(table, new RegExp(`<th scope="col">${role}</th>`));
+  const row = table.match(/<tr><td>2026-11-23<\/td>[\s\S]*?<\/tr>/)[0];
+  assert.equal((row.match(/<td>/g) ?? []).length, 7);  // date, total, five roles
+  assert.match(row, /<td>150.8<\/td>/);  // Lead 50% of 301.5
+});
+
+test('old files without per-role days still show the single total bar, no crash, no legend', () => {
+  const html = renderCostTile(validateCost(sample(), NOW), NOW);
+  assert.equal((html.match(/class="cost-bar/g) ?? []).length, 7);
+  assert.doesNotMatch(html, /cost-seg|cost-legend/);
+  assert.match(html, /<thead><tr><th scope="col">Date<\/th><th scope="col">Units per merge<\/th><\/tr><\/thead>/);
+  const mixed = stacked({ series: [day(0), ...stacked().series.slice(1)] });  // one old day among stacked ones keeps a plain bar
+  const m = renderCostTile(validateCost(mixed, NOW), NOW);
+  assert.equal((m.match(/class="cost-bar/g) ?? []).length, 1);
+  assert.match(m, /cost-legend/);
+});
+
+test('role colours are fixed tokens that pass 3:1 against the card in light and dark', () => {
+  const css = readFileSync('site/style.css', 'utf8'), tokens = readFileSync('site/tokens.css', 'utf8');
+  const lum = (hex) => { const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((v) => v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
+  const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+  const dark = tokens.slice(tokens.indexOf('prefers-color-scheme: dark'));
+  const pick = (src, name) => src.match(new RegExp(`--ab-${name}:\\s*(#[0-9A-Fa-f]{6})`))[1];
+  const tokenOf = { 'role-builder': 'bridge', 'role-reviewer': 'active', 'role-chief': 'external', 'role-lead': 'needs', 'role-other': 'neutral' };
+  const seen = new Set();
+  for (const [cls, token] of Object.entries(tokenOf)) {
+    assert.match(css, new RegExp(`\\.${cls}[^{]*\\{[^}]*var\\(--ab-${token}\\)`), cls);
+    assert.ok(!seen.has(token)); seen.add(token);
+    assert.ok(ratio(pick(tokens, token), pick(tokens, 'card')) >= 3, `${cls} light`);
+    assert.ok(ratio(pick(dark, token), pick(dark, 'card')) >= 3, `${cls} dark`);
+  }
+});
