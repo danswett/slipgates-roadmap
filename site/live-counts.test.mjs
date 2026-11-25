@@ -13,13 +13,14 @@ function page(merged) {
   return { targets, querySelector: (selector) => selector === '[data-live-merged]' ? merged : targets[selector.match(/data-live-counts="(people|fleet)"/)?.[1]] ?? null,
     querySelectorAll: () => [] };
 }
+const path = (url) => url.split('?')[0];
 const request = (input = people()) => async (url) =>
-  new Response(url.endsWith('people-at-work.json') ? JSON.stringify(input) : JSON.stringify(fleet()));
+  new Response(path(url).endsWith('people-at-work.json') ? JSON.stringify(input) : JSON.stringify(fleet()));
 
 test('view-time reads use only the two public paths with no credentials or redirects', async () => {
   const root = page(), calls = [];
   await refreshLiveCounts(root, async (url, options) => {
-    calls.push(url);
+    calls.push(path(url));
     assert.equal(options.credentials, 'omit'); assert.equal(options.redirect, 'error');
     assert.equal(options.referrerPolicy, 'no-referrer'); assert.equal(options.cache, 'no-store');
     assert.equal(options.headers, undefined); assert.ok(options.signal instanceof AbortSignal);
@@ -53,7 +54,7 @@ test('persisted pageshow rereads both public files but an ordinary pageshow does
   globalThis.document = root;
   globalThis.addEventListener = (name, listener) => listeners.set(name, listener);
   t.mock.method(globalThis, 'setInterval', () => 0);
-  t.mock.method(globalThis, 'fetch', async (url) => { calls.push(url); return request()(url); });
+  t.mock.method(globalThis, 'fetch', async (url) => { calls.push(path(url)); return request()(url); });
   await import('./live-counts.mjs?persisted-pageshow-test');
   await new Promise(setImmediate);
   assert.ok(Object.values(root.targets).every(target => target.dataset.liveState === 'ready'));
@@ -76,7 +77,7 @@ test('blocked fleet rereads reset baked merged totals to public-only and show fl
   const reload = page({ dataset: merged.dataset, innerHTML: baked });
   const target = reload.querySelector('[data-live-merged]');
   await refreshLiveCounts(reload, async url => {
-    if (url.endsWith('fleet-counts.json')) throw new Error('blocked');
+    if (path(url).endsWith('fleet-counts.json')) throw new Error('blocked');
     return request()(url);
   });
   assert.match(target.innerHTML, /class="stat num">100<\/div>/);
@@ -94,7 +95,7 @@ test('invalid, blocked and oversized data cannot retain a last good value or lea
   for (const body of ['{', JSON.stringify({ ...people(), privateName: marker }),
     JSON.stringify({ ...people(), builders: marker }), valid.padEnd(65537, ' ')]) {
     const root = page();
-    await refreshLiveCounts(root, async (url) => new Response(url.endsWith('people-at-work.json') ? body : JSON.stringify(fleet())));
+    await refreshLiveCounts(root, async (url) => new Response(path(url).endsWith('people-at-work.json') ? body : JSON.stringify(fleet())));
     assert.match(root.targets.people.innerHTML, /Unavailable/);
     assert.doesNotMatch(root.targets.people.innerHTML, /LAST_GOOD_VALUE|PRIVATE_VIEW_CANARY/);
     assert.match(root.targets.fleet.innerHTML, /commits: 12345/);
@@ -103,7 +104,7 @@ test('invalid, blocked and oversized data cannot retain a last good value or lea
   await refreshLiveCounts(root, async () => { throw new Error(marker); });
   for (const target of Object.values(root.targets)) assert.match(target.innerHTML, /unavailable/i);
   assert.ok(!logs.join('').includes(marker));
-  await refreshLiveCounts(root, async (url) => new Response(url.endsWith('people-at-work.json') ? valid.padEnd(65536, ' ') : JSON.stringify(fleet())));
+  await refreshLiveCounts(root, async (url) => new Response(path(url).endsWith('people-at-work.json') ? valid.padEnd(65536, ' ') : JSON.stringify(fleet())));
   assert.match(root.targets.people.innerHTML, />7<\/div>/, 'the 64 KB boundary is inclusive');
 });
 
@@ -125,8 +126,62 @@ test('a late response from before page resume cannot replace the newer unavailab
   t.mock.method(console, 'error', () => {});
   const root = page(), replies = [];
   const old = refreshLiveCounts(root, (url) => new Promise(resolve => replies.push(() => resolve(
-    new Response(JSON.stringify(url.endsWith('people-at-work.json') ? people() : fleet()))))));
+    new Response(JSON.stringify(path(url).endsWith('people-at-work.json') ? people() : fleet()))))));
   await refreshLiveCounts(root, async () => { throw new Error('blocked'); });
   replies.forEach(reply => reply()); await old;
   for (const target of Object.values(root.targets)) assert.match(target.innerHTML, /unavailable/i);
+});
+
+const goodAge = (ms) => new Date(Date.now() - ms).toISOString();
+const costFile = (generatedAt) => { const day = generatedAt.slice(0, 10), d = (n) => new Date(Date.parse(day) - n * 86400000).toISOString().slice(0, 10);
+  return { schema: 1, generatedAt: generatedAt.slice(0, 19) + 'Z', day, units: 100, merges: 1, unitsPerMerge: 100, coordinationSharePct: 10,
+    roles: { Lead: { units: 10, unitsPerMerge: 10 } },
+    series: [6, 5, 4, 3, 2, 1, 0].map((n) => ({ day: d(n), units: 100, merges: 1, unitsPerMerge: 100, coordinationSharePct: 10 })) }; };
+const cost = () => costFile(new Date().toISOString());
+
+test('reads carry a per-minute cache-busting query so the CDN copy is at most a minute old', async () => {
+  const urls = []; await refreshLiveCounts(page(), async (url) => { urls.push(url); return request()(url); });
+  assert.equal(urls.length, 2);
+  for (const url of urls) assert.match(url, /\.json\?t=\d+$/);
+});
+
+test('the cost card is read live from cost.json and rendered', async () => {
+  const root = page(); root.targets.cost = { innerHTML: 'BAKED', dataset: {} };
+  const old = root.querySelector; root.querySelector = (s) => s.includes('"cost"') ? root.targets.cost : old(s);
+  await refreshLiveCounts(root, async (url) => path(url).endsWith('cost.json') ? new Response(JSON.stringify(cost())) : request()(url));
+  assert.match(root.targets.cost.innerHTML, /Cost per merge/); assert.equal(root.targets.cost.dataset.liveState, 'ready');
+});
+
+test('a failed re-read keeps the last good copy and marks it Stale; a later good read clears the mark', async (t) => {
+  t.mock.method(console, 'error', () => {});
+  const root = page(); await refreshLiveCounts(root, request());
+  const before = root.targets.people.innerHTML; assert.match(before, />7<\/div>/);
+  await refreshLiveCounts(root, async () => { throw new Error('offline'); });
+  for (const target of Object.values(root.targets)) {
+    assert.equal(target.dataset.liveState, 'stale');
+    assert.match(target.innerHTML, /class="live-stale">Stale</); assert.doesNotMatch(target.innerHTML, /unavailable/i);
+  }
+  assert.ok(root.targets.people.innerHTML.startsWith(before));
+  await refreshLiveCounts(root, request());
+  assert.equal(root.targets.people.dataset.liveState, 'ready'); assert.doesNotMatch(root.targets.people.innerHTML, /live-stale/);
+});
+
+test('a re-read in flight does not blank the last good copy', async () => {
+  const root = page(); await refreshLiveCounts(root, request());
+  const before = root.targets.fleet.innerHTML;
+  const pending = refreshLiveCounts(root, () => new Promise(() => {}));
+  assert.equal(root.targets.fleet.innerHTML, before); void pending;
+});
+
+test('the page re-reads every 60 seconds, but not while hidden', async (t) => {
+  const root = { ...page(), addEventListener() {}, hidden: false }, calls = [], timers = [];
+  const globals = ['document', 'addEventListener'].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]);
+  t.after(() => globals.forEach(([key, d]) => d ? Object.defineProperty(globalThis, key, d) : Reflect.deleteProperty(globalThis, key)));
+  globalThis.document = root; globalThis.addEventListener = () => {};
+  t.mock.method(globalThis, 'setInterval', (fn, ms) => { timers.push([fn, ms]); return 0; });
+  t.mock.method(globalThis, 'fetch', async (url) => { calls.push(path(url)); return request()(url); });
+  await import('./live-counts.mjs?sixty-second-test'); await new Promise(setImmediate);
+  const refresh = timers.find(([, ms]) => ms === 60000)?.[0]; assert.ok(refresh, 'a 60 s timer exists');
+  calls.length = 0; root.hidden = true; refresh(); await new Promise(setImmediate); assert.deepEqual(calls, []);
+  root.hidden = false; refresh(); await new Promise(setImmediate); assert.equal(calls.length, 2);
 });

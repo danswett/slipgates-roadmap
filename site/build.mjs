@@ -66,10 +66,10 @@ const content = reason
 <div class="grid tiles" aria-label="Totals">${tile('Commits', number(stats?.commits?.total) + staleBadge(stats?.commits) + '<div class="sub">on main, all time</div>')}
 ${tile('Pull requests merged', mergedTile() + staleBadge(stats?.merges, stats?.pull_requests))}
 ${tile('Issues resolved', `<div class="stat num">${count(issues?.resolved)}<small>of ${count(issues?.total)}</small></div>` + ([issues?.resolved, issues?.total].every(Number.isSafeInteger) && issues.resolved >= 0 && issues.total >= issues.resolved ? bar(issues.resolved, issues.total, 'Issues resolved', true) : ''))}
-${tile('People at work', peopleTile())}</div><div class="grid">${renderCostTile(readCostFile(cost))}</div>${renderCharts(stats)}
+${tile('People at work', peopleTile())}</div><div class="grid"><div data-live-counts="cost" style="display:contents">${renderCostTile(readCostFile(cost))}</div></div>${renderCharts(stats)}
 <section class="grid" aria-labelledby="h-ep"><h2 id="h-ep">Epics</h2><ul class="epics">${renderEpics(epics, escape)}</ul></section>${renderBlockers(epics, escape)}${renderNeedsBlocker(epics, escape)}`;
 mkdirSync(out, { recursive: true });
-for (const asset of ['tokens.css', 'style.css', 'blockers.css', 'fonts', 'people-freshness.mjs', 'live-counts.mjs', 'people-at-work.mjs', 'fleet-counts.mjs']) cpSync(fileURLToPath(new URL(asset, import.meta.url)), join(out, asset), { recursive: true });
+for (const asset of ['tokens.css', 'style.css', 'blockers.css', 'fonts', 'people-freshness.mjs', 'live-counts.mjs', 'people-at-work.mjs', 'fleet-counts.mjs', 'cost.mjs', 'stale.mjs']) cpSync(fileURLToPath(new URL(asset, import.meta.url)), join(out, asset), { recursive: true });
 writeFileSync(join(out, 'CNAME'), 'roadmap.slipgates.com\n');
 writeFileSync(join(out, 'index.html'), `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">

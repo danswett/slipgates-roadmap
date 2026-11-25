@@ -22,3 +22,14 @@ test('an unavailable tile stays unavailable and an unusable timestamp cannot loo
     assert.equal(badge.hidden, false);
   }
 });
+
+test('the data age shows in minutes next to the producer time and keeps counting', () => {
+  const generatedAt = '2026-11-11T22:19:06Z', at = Date.parse(generatedAt);
+  const age = { textContent: '', hasAttribute: (name) => name === 'data-age' };
+  const time = { dateTime: generatedAt, nextElementSibling: age, parentElement: { querySelector: () => null } };
+  for (const [now, text] of [[at, ' (just now)'], [at + 59000, ' (just now)'], [at + 60000, ' (1 min ago)'], [at + 300000, ' (5 min ago)'],
+    [at + 3 * 3600000, ' (3 h ago)'], [at - 120000, ''], [NaN, '']]) {
+    updatePeopleFreshness({ querySelectorAll: () => [time] }, now);
+    assert.equal(age.textContent, text, `age ${now - at} ms`);
+  }
+});
