@@ -69,3 +69,9 @@ footer{margin-top:40px;color:var(--ab-text3);font-size:.8125rem;display:flex;fle
 .cost-bar{fill:color-mix(in srgb,var(--ab-bridge) 75%,transparent)}.cost-bar.today{fill:var(--ab-bridge)}
 .cost-target{stroke:var(--ab-text2);stroke-width:1.5;stroke-dasharray:6 4}
 @media(forced-colors:active){.cost-bar{fill:GrayText;forced-color-adjust:none}.cost-bar.today{fill:Highlight}.cost-target{stroke:CanvasText}}
+.cost-seg{stroke:var(--ab-card);stroke-width:1}.cost-seg.role-builder,.swatch.role-builder{fill:var(--ab-bridge);background:var(--ab-bridge)}.cost-seg.role-reviewer,.swatch.role-reviewer{fill:var(--ab-active);background:var(--ab-active)}
+.cost-seg.role-chief,.swatch.role-chief{fill:var(--ab-external);background:var(--ab-external)}.cost-seg.role-lead,.swatch.role-lead{fill:var(--ab-needs);background:var(--ab-needs)}
+.cost-seg.role-other,.swatch.role-other{fill:var(--ab-neutral);background:var(--ab-neutral)}
+.cost-legend{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:4px 16px;font-size:.875rem;color:var(--ab-text2)}.cost-legend li{display:inline-flex;align-items:center;gap:6px}
+.swatch{width:12px;height:12px;border-radius:2px;display:inline-block}
+@media(forced-colors:active){.cost-seg,.swatch{forced-color-adjust:none}.cost-seg{stroke:Canvas}.cost-seg.role-builder,.swatch.role-builder{fill:LinkText;background:LinkText}.cost-seg.role-reviewer,.swatch.role-reviewer{fill:Highlight;background:Highlight}.cost-seg.role-chief,.swatch.role-chief{fill:VisitedText;background:VisitedText}.cost-seg.role-lead,.swatch.role-lead{fill:ButtonText;background:ButtonText}.cost-seg.role-other,.swatch.role-other{fill:GrayText;background:GrayText}}

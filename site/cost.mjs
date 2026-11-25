@@ -4,6 +4,12 @@ import { staleBadge } from './stale.mjs';
 export const COST_TARGET = 300;
 const STALE_AFTER = 3 * 3600000;
 const ROLES = ['Lead', 'Chief', 'Builder', 'Reviewer', 'Other'];
+const STACK = ['Builder', 'Reviewer', 'Chief', 'Lead', 'Other'];  // bottom to top, fixed; each role keeps one colour class (role-*) in style.css
+const SERIES_KEYS = ['day', 'units', 'merges', 'unitsPerMerge', 'coordinationSharePct'];
+// A day's optional per-role split (files from before it carry none): each role exact, bounded and consistent with that day's merges.
+const dayRoles = (d) => !Object.hasOwn(d, 'roles') || (d.roles && typeof d.roles === 'object' && !Array.isArray(d.roles) &&
+  Object.entries(d.roles).every(([name, r]) => ROLES.includes(name) && exact(r, ['units', 'unitsPerMerge']) && whole(r.units, 1e9) &&
+    orNull(num)(r.unitsPerMerge, 1e7) && (d.merges === null || consistent(r.units, d.merges, r.unitsPerMerge))));
 const exact = (value, keys) => value && typeof value === 'object' && !Array.isArray(value) &&
   Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key));
 const whole = (n, high) => Number.isInteger(n) && n >= 0 && n <= high;
@@ -26,7 +32,7 @@ export function validateCost(value, now = Date.now()) {
     !Object.entries(value.roles).every(([name, r]) => ROLES.includes(name) && exact(r, ['units', 'unitsPerMerge']) &&
       whole(r.units, 1e9) && orNull(num)(r.unitsPerMerge, 1e7))) return unavailable('invalid roles');
   if (!Array.isArray(value.series) || value.series.length !== 7 ||
-    !value.series.every((d) => exact(d, ['day', 'units', 'merges', 'unitsPerMerge', 'coordinationSharePct']) && isDay(d.day) &&
+    !value.series.every((d) => (exact(d, SERIES_KEYS) || exact(d, [...SERIES_KEYS, 'roles'])) && dayRoles(d) && isDay(d.day) &&
       orNull(whole)(d.units, 1e9) && orNull(whole)(d.merges, 1e6) && orNull(num)(d.unitsPerMerge, 1e7) && orNull(num)(d.coordinationSharePct, 100)))
     return unavailable('invalid series');
   const days = value.series.map((d) => d.day);
@@ -54,15 +60,32 @@ export function renderCostTile(cost, now = Date.now()) {
   const share = cost.coordinationSharePct === null ? 'Data unavailable' : `${fmt(cost.coordinationSharePct)}%`;
   const max = Math.max(COST_TARGET * 1.25, ...cost.series.map((d) => d.unitsPerMerge ?? 0));
   const y = (v) => (112 - v / max * 100).toFixed(1);
-  const bars = cost.series.map((d, i) => d.unitsPerMerge === null ? '' :
-    `<rect class="cost-bar${i === 6 ? ' today' : ''}" x="${(8 + i * 78).toFixed(0)}" width="60" y="${y(d.unitsPerMerge)}" height="${(112 - y(d.unitsPerMerge)).toFixed(1)}"/>`).join('');
+  const split = (d) => d.roles && Object.keys(d.roles).length && Object.values(d.roles).every((r) => r.unitsPerMerge !== null);
+  const bars = cost.series.map((d, i) => {
+    if (d.unitsPerMerge === null) return '';
+    const x = (8 + i * 78).toFixed(0), today = i === 6 ? ' today' : '';
+    if (!split(d)) return `<rect class="cost-bar${today}" x="${x}" width="60" y="${y(d.unitsPerMerge)}" height="${(112 - y(d.unitsPerMerge)).toFixed(1)}"/>`;
+    let base = 0;  // a card-coloured outline separates segments, so colour is never the only cue
+    const segs = STACK.filter((name) => d.roles[name]?.unitsPerMerge > 0).map((name) => {
+      const top = base + d.roles[name].unitsPerMerge, h = y(base) - y(top);
+      const out = `<rect class="cost-seg role-${name.toLowerCase()}" x="${x}" width="60" y="${y(top)}" height="${h.toFixed(1)}"><title>${name}: ${fmt(d.roles[name].unitsPerMerge)}</title></rect>`;
+      base = top; return out;
+    }).join('');
+    return `<g class="cost-day${today}">${segs}</g>`;
+  }).join('');
+  const anySplit = cost.series.some(split);
+  const legend = anySplit ? `<ul class="cost-legend" aria-label="Roles, bottom to top">${STACK.map((name) =>
+    `<li><span class="swatch role-${name.toLowerCase()}" aria-hidden="true"></span><span>${name}</span></li>`).join('')}</ul>` : '';
   const chart = `<svg class="spark" viewBox="0 0 560 120" role="img" aria-label="Units per merge over the last 7 days, target ${COST_TARGET}">
 <line class="axis" x1="0" x2="560" y1="112" y2="112"/>${bars}<line class="cost-target" x1="0" x2="560" y1="${y(COST_TARGET)}" y2="${y(COST_TARGET)}"/></svg>
-<div class="axis-l" aria-hidden="true"><span>6 days ago</span><span>Today (dashed line: target ${COST_TARGET})</span></div>`;
-  const rows = cost.series.map((d) => `<tr><td>${d.day}</td><td>${d.unitsPerMerge === null ? 'Data unavailable' : fmt(d.unitsPerMerge)}</td></tr>`).join('');
+<div class="axis-l" aria-hidden="true"><span>6 days ago</span><span>Today (dashed line: target ${COST_TARGET})</span></div>${legend}`;
+  const cell = (v) => `<td>${v === null || v === undefined ? 'Data unavailable' : fmt(v)}</td>`;
+  const roleCols = anySplit ? STACK.map((name) => `<th scope="col">${name}</th>`).join('') : '';
+  const rows = cost.series.map((d) => `<tr><td>${d.day}</td>${cell(d.unitsPerMerge)}${anySplit ? STACK.map((name) =>
+    cell(d.roles?.[name] ? d.roles[name].unitsPerMerge : d.unitsPerMerge === null || !split(d) ? null : 0)).join('') : ''}</tr>`).join('');
   return card(`${head}${old ? staleBadge({ stale_since: cost.generatedAt }) : ''}<p class="sub">Of all units, the coordination (Lead and Chief) share is ${share}.</p>
 <table aria-label="Units per merge by role"><thead><tr><th scope="col">Role</th><th scope="col">Units per merge</th><th scope="col">Units today</th></tr></thead><tbody>${roles}</tbody></table>
 ${chart}<details><summary>View as a table</summary><table><caption>Units per merge, last 7 days (Pacific days)</caption>
-<thead><tr><th scope="col">Date</th><th scope="col">Units per merge</th></tr></thead><tbody>${rows}</tbody></table></details>
+<thead><tr><th scope="col">Date</th><th scope="col">Units per merge</th>${roleCols}</tr></thead><tbody>${rows}</tbody></table></details>
 <p class="sub">Claude Code and Codex units (Opus 15, others 1) over all merges of both repos.${old ? '' : ` Updated ${cost.generatedAt}.`}</p>`);
 }
