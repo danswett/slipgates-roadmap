@@ -64,5 +64,5 @@ export function renderCostTile(cost, now = Date.now()) {
 <table aria-label="Units per merge by role"><thead><tr><th scope="col">Role</th><th scope="col">Units per merge</th><th scope="col">Units today</th></tr></thead><tbody>${roles}</tbody></table>
 ${chart}<details><summary>View as a table</summary><table><caption>Units per merge, last 7 days (Pacific days)</caption>
 <thead><tr><th scope="col">Date</th><th scope="col">Units per merge</th></tr></thead><tbody>${rows}</tbody></table></details>
-<p class="sub">Claude Code and Codex units (Opus 15, others 1) over all merges of both repos.${old ? '' : ` Updated ${cost.generatedAt}.`}</p>`);
+<p class="sub">Claude Code and Codex units (Opus 15, others 1) over all merges of both repos.${old ? '' : ` Updated <time data-people-generated-at datetime="${cost.generatedAt}">${cost.generatedAt}</time><span data-age></span>.`}</p>`);
 }

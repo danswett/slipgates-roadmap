@@ -32,7 +32,7 @@ const stamp = (value, label = '') => {
   if (typeof value.generatedAt !== 'string' || !Number.isFinite(Date.parse(value.generatedAt)))
     return `<div class="sub">${label}Update time unavailable</div>`;
   const timestamp = value.generatedAt.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-  return `<div class="sub">${label}Updated at <time data-people-generated-at datetime="${timestamp}">${timestamp}</time> (UTC)
+  return `<div class="sub">${label}Updated at <time data-people-generated-at datetime="${timestamp}">${timestamp}</time><span data-age></span> (UTC)
 <span class="people-stale" data-people-stale role="status">Stale</span></div>`;
 };
 

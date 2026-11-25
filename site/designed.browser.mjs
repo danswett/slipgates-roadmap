@@ -10,7 +10,7 @@ test('designed roadmap renders on phone and desktop without outside requests', {
   const dir = mkdtempSync(join(tmpdir(), 'roadmap-design-')), out = join(dir, 'out');
   const data = join(dir, 'data.json'), people = join(dir, 'people.json'), requests = [], failures = [], pending = new Map();
   const raw = 'https://raw.githubusercontent.com/danswett/slipgates-roadmap/fleet-counts/';
-  const publicUrls = [`${raw}people-at-work.json`, `${raw}fleet-counts.json`], expectedFailures = new Set();
+  const publicUrls = [`${raw}people-at-work.json`, `${raw}fleet-counts.json`, `${raw}cost.json`], isPublic = (url) => publicUrls.includes(url.split('?')[0]), expectedFailures = new Set();
   let fixtureMode = 'fresh', fixtureAt;
   const value = { updatedAt: new Date().toISOString(), totals: { prsMerged: 100 }, people: { builders: 3, reviewers: 2 },
     epics: [{ number: 2, title: 'Finished', closed: 3, open: 0, priority_order: 1, open_prs: 0, merged_last_24h: 4, blockers: [] },
@@ -48,10 +48,11 @@ test('designed roadmap renders on phone and desktop without outside requests', {
       if (event.method === 'Network.requestWillBeSent') requests.push(event.params.request.url);
       if (event.method === 'Fetch.requestPaused') {
         const { request, requestId, networkId } = event.params;
-        assert.ok(publicUrls.includes(request.url)); assert.ok(!Object.keys(request.headers).some(key => /^(authorization|cookie)$/i.test(key)));
+        assert.ok(isPublic(request.url)); assert.ok(!Object.keys(request.headers).some(key => /^(authorization|cookie)$/i.test(key)));
         if (fixtureMode === 'blocked') { expectedFailures.add(networkId); void send('Fetch.failRequest', { requestId, errorReason: 'BlockedByClient' }); }
         else {
-          const sample = request.url.endsWith('people-at-work.json') ? { schema: 1, generatedAt: fixtureAt, builders: 7, reviewers: 4 }
+          const costDay = new Date(fixtureAt).toISOString().slice(0, 10), costSample = { schema: 1, generatedAt: fixtureAt.slice(0, 19) + 'Z', day: costDay, units: 100, merges: 1, unitsPerMerge: 100, coordinationSharePct: 10, roles: { Lead: { units: 10, unitsPerMerge: 10 } }, series: [6, 5, 4, 3, 2, 1, 0].map(n => ({ day: new Date(Date.parse(costDay) - n * 86400000).toISOString().slice(0, 10), units: 100, merges: 1, unitsPerMerge: 100, coordinationSharePct: 10 })) };
+          const sample = request.url.split('?')[0].endsWith('cost.json') ? costSample : request.url.split('?')[0].endsWith('people-at-work.json') ? { schema: 1, generatedAt: fixtureAt, builders: 7, reviewers: 4 }
             : { schema: 1, generatedAt: fixtureAt, issuesOpen: 4, issuesResolved: 9, commits: 12345, prsMerged24h: 0, prsMerged14d: 0, prsMergedTotal: 99,
               ...Object.fromEntries(['Hour', 'Day'].flatMap(unit => Array.from({ length: unit === 'Hour' ? 24 : 14 }, (_, i) => [`merge${unit}${String(i).padStart(2, '0')}`, 0]))) };
           void send('Fetch.fulfillRequest', { requestId, responseCode: 200, responseHeaders: [{ name: 'Content-Type', value: 'application/json' }, { name: 'Access-Control-Allow-Origin', value: '*' }], body: Buffer.from(JSON.stringify(sample)).toString('base64') });
@@ -139,12 +140,12 @@ test('designed roadmap renders on phone and desktop without outside requests', {
           await liveReady();
           assert.deepEqual(await evaluate("[...document.querySelectorAll('[data-live-merged] time')].map(e => ({ at: e.dateTime, stale: !e.parentElement.querySelector('[data-people-stale]').hidden }))"),
             [{ at: value.updatedAt, stale: true }, { at: fixtureAt, stale: false }], 'fresh fleet must not freshen the baked public component');
-          const beforeResume = requests.filter(url => publicUrls.includes(url)).length;
+          const beforeResume = requests.filter(isPublic).length;
           fixtureMode = 'blocked';
           await evaluate("dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }))");
-          await liveReady('unavailable');
-          assert.equal(requests.filter(url => publicUrls.includes(url)).length, beforeResume + 2, 'persisted resume rereads both fixed public files');
-          assert.equal(await evaluate("[...document.querySelectorAll('[data-live-counts]')].every(e => /unavailable/i.test(e.textContent)) && document.querySelector('[data-live-merged] .stat').textContent === '100'"), true);
+          await liveReady('stale');
+          assert.equal(requests.filter(isPublic).length, beforeResume + 3, 'persisted resume rereads the three fixed public files');
+          assert.equal(await evaluate("[...document.querySelectorAll('[data-live-counts]')].every(e => e.querySelector('.live-stale') && !/unavailable/i.test(e.textContent)) && document.querySelector('[data-live-merged] .stat').textContent === '199'"), true, 'a blocked reread keeps the last good copy, marked Stale');
           fixtureMode = 'fresh'; fixtureAt = value.updatedAt;
           await evaluate("dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }))");
           await liveReady();
@@ -193,8 +194,8 @@ test('designed roadmap renders on phone and desktop without outside requests', {
       } else { assert.equal(view.title, 'Data unavailable'); assert.equal(await evaluate("document.querySelector('[aria-labelledby=\"h-bl\"]')"), null); if (state === 'stale') { assert.match(view.text, /Out of date\. Last update/); assert.match(view.text, /The last good update was at .* PT/); } }
       if (process.env.ROADMAP_SCREENSHOTS) { mkdirSync(process.env.ROADMAP_SCREENSHOTS, { recursive: true }); writeFileSync(join(process.env.ROADMAP_SCREENSHOTS, `${width}-${state}.png`), Buffer.from((await send('Page.captureScreenshot', { captureBeyondViewport: true })).data, 'base64')); }
     }
-    assert.ok(requests.some(url => url.endsWith('.woff2'))); assert.ok(publicUrls.every(url => requests.includes(url)));
-    assert.ok(requests.every(url => new URL(url).origin === origin || publicUrls.includes(url)), requests.join('\n')); assert.deepEqual(failures, []);
+    assert.ok(requests.some(url => url.endsWith('.woff2'))); assert.ok(publicUrls.every(url => requests.some(r => r.split("?")[0] === url)));
+    assert.ok(requests.every(url => new URL(url).origin === origin || isPublic(url)), requests.join('\n')); assert.deepEqual(failures, []);
   } finally {
     if (socket?.readyState === WebSocket.OPEN) await send('Browser.close');
     else browser.kill();

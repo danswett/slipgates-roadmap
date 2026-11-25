@@ -22,6 +22,6 @@ export function renderPeopleCounts(value) {
   const timestamp = value.generatedAt.replaceAll('&', '&amp;').replaceAll('"', '&quot;');
   return `<div class="people">${['builders', 'reviewers'].map((role) =>
     `<div><div class="stat num">${value[role]}</div><span class="sub">${role}</span></div>`).join('')}</div>
-<div class="sub">Updated at <time data-people-generated-at datetime="${timestamp}">${at} PT</time>
+<div class="sub">Updated at <time data-people-generated-at datetime="${timestamp}">${at} PT</time><span data-age></span>
 <span class="people-stale" data-people-stale role="status">Stale</span></div>`;
 }
